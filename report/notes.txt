@@ -9,3 +9,8 @@ add
 add scalar
 mul
 mul scalar
+
+
+
+
+Array SIMD slices.
