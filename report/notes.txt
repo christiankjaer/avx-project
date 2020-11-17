@@ -1,0 +1,11 @@
+SIMD signature
+
+internal type
+external type
+
+from external type
+
+add
+add scalar
+mul
+mul scalar
