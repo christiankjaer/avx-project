@@ -27,4 +27,7 @@ functor Tup4(Elm: ELEMENT) : SIMD = struct
   fun muls ((a1, a2, a3, a4), b) =
     (Elm.mul (a1, b), Elm.mul (a2, b), Elm.mul (a3, b), Elm.mul (a4, b))
 
+  fun divs ((a1, a2, a3, a4), b) =
+    (Elm.divi (a1, b), Elm.divi (a2, b), Elm.divi (a3, b), Elm.divi (a4, b))
+
 end

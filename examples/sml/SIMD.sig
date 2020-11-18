@@ -16,4 +16,6 @@ signature SIMD = sig
 
   val mul : simd * simd -> simd
   val muls : simd * element -> simd
+
+  val divs : simd * element -> simd
 end
