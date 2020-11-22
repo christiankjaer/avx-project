@@ -56,5 +56,4 @@ functor Tup4(Elm: ELEMENT) : SIMD = struct
   fun lts ((a1, a2, a3, a4), s) =
     (Elm.lt (a1, s), Elm.lt (a2, s), Elm.lt (a3, s), Elm.lt (a4, s))
 
-
 end

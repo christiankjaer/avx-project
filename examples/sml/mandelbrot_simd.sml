@@ -1,5 +1,5 @@
-val width: int = 200
-val height: int = 500
+val width: int = 100
+val height: int = 250
 
 structure Real4 = Tup4(
   struct
@@ -42,7 +42,7 @@ val one = Real4.mk (1.0, 1.0, 1.0, 1.0)
 
 
 (* 4 at a time *)
-fun mandelbrot (px4: int, py: int): Real4.simd =
+fun mandelbrot (py: int, px4: int): Real4.simd =
   let
     val x0 = scaleX px4
     val y0 = scaleY py
@@ -50,10 +50,12 @@ fun mandelbrot (px4: int, py: int): Real4.simd =
       if (Real4.any mask andalso iter < 1000)
       then
         let
-          val newX = Real4.add ((Real4.sub (Real4.mul (x,x), Real4.mul (y,y))), x0)
+          val x2 = Real4.mul (x, x)
+          val y2 = Real4.mul (y, y)
+          val newX = Real4.add ((Real4.sub (x2, y2)), x0)
           val newY = Real4.adds (Real4.muls (Real4.mul (x,y), 2.0), y0)
 
-          val cmp = Real4.add (Real4.mul (x, x), Real4.mul (y, y))
+          val cmp = Real4.add (x2, y2)
           val newMask = Real4.lts (cmp, 4.0)
         in
           go (iter + 1) newMask (Real4.blend (iters, Real4.add (iters, one), mask)) (Real4.blend (x, newX, mask)) (Real4.blend (y, newY, mask))
@@ -64,7 +66,7 @@ fun mandelbrot (px4: int, py: int): Real4.simd =
   end
 
 
-val set: Real4.simd Array2.array = Array2.tabulate Array2.ColMajor (width, height, mandelbrot)
+val set: Real4.simd Array2.array = Array2.tabulate Array2.RowMajor (height, width, mandelbrot)
 
 val _ =
   let
@@ -77,8 +79,8 @@ val _ =
     val _ = print "P2\n"
     val _ = print ((Int.toString (width * Real4.size)) ^ " " ^ (Int.toString height) ^ "\n")
     val _ = print "1000\n"
-    val _ = Array2.appi Array2.ColMajor
-                       (fn (x, y, res) => print ((showSimd res) ^ (if x = width - 1 then "\n" else " ")))
+    val _ = Array2.appi Array2.RowMajor
+                       (fn (y, x, res) => print ((showSimd res) ^ (if x = width - 1 then "\n" else " ")))
                        { base = set, row = 0, col = 0, nrows = NONE, ncols = NONE }
   in
     ()
