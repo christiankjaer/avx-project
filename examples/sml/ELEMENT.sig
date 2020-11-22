@@ -4,4 +4,6 @@ signature ELEMENT = sig
   val sub : t * t -> t
   val mul : t * t -> t
   val divi : t * t -> t
+  val eq : t * t -> bool
+  val lt : t * t -> bool
 end

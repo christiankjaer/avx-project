@@ -5,6 +5,7 @@ functor Tup4(Elm: ELEMENT) : SIMD = struct
   type element = Elm.t
   type interface = Elm.t * Elm.t * Elm.t * Elm.t
   type simd = Elm.t * Elm.t * Elm.t * Elm.t
+  type mask = bool * bool * bool * bool
   
   fun mk a = a
   fun read a = a
@@ -29,5 +30,31 @@ functor Tup4(Elm: ELEMENT) : SIMD = struct
 
   fun divs ((a1, a2, a3, a4), b) =
     (Elm.divi (a1, b), Elm.divi (a2, b), Elm.divi (a3, b), Elm.divi (a4, b))
+
+  fun blend ((a1, a2, a3, a4), (b1, b2, b3, b4), (m1, m2, m3, m4)) =
+    ( if m1 then b1 else a1
+    , if m2 then b2 else a2
+    , if m3 then b3 else a3
+    , if m4 then b4 else a4
+    )
+
+  fun all (m1, m2, m3, m4) = m1 andalso m2 andalso m3 andalso m4
+  fun any (m1, m2, m3, m4) = m1 orelse m2 orelse m3 orelse m4
+
+  val true_ = (true, true, true, true)
+  val false_ = (false, false, false, false)
+
+  fun eq ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
+    (Elm.eq (a1, b1), Elm.eq (a2, b2), Elm.eq (a3, b3), Elm.eq (a4, b4))
+
+  fun eqs ((a1, a2, a3, a4), s) =
+    (Elm.eq (a1, s), Elm.eq (a2, s), Elm.eq (a3, s), Elm.eq (a4, s))
+
+  fun lt ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
+    (Elm.lt (a1, b1), Elm.lt (a2, b2), Elm.lt (a3, b3), Elm.lt (a4, b4))
+
+  fun lts ((a1, a2, a3, a4), s) =
+    (Elm.lt (a1, s), Elm.lt (a2, s), Elm.lt (a3, s), Elm.lt (a4, s))
+
 
 end

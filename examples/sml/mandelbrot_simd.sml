@@ -8,15 +8,9 @@ structure Real4 = Tup4(
     fun sub (x, y) = (x - y): real
     fun mul (x, y) = (x * y): real
     fun divi (x, y) = (x / y): real
-  end)
 
-structure Int4 = Tup4(
-  struct
-    type t = int
-    fun add (x, y) = (x + y): int
-    fun sub (x, y) = (x - y): int
-    fun mul (x, y) = (x * y): int
-    fun divi (x, y) = (x div y): int
+    fun eq (x, y) = Real.compare (x, y) = EQUAL
+    fun lt (x, y) = Real.compare (x, y) = LESS
   end)
 
 val imageWidth = Real.fromInt (width * Real4.size)
@@ -44,75 +38,41 @@ fun scaleX (x: int): Real4.simd =
 val scaleY = scale (bottom, top, Real.fromInt height)
 
 val zero = Real4.mk (0.0, 0.0, 0.0, 0.0)
-val zeroi = Int4.mk (0, 0, 0, 0)
-
-fun le (xs, y): Int4.simd =
-  let
-    val (a, b, c, d) = Real4.read xs
-  in
-    ( if a <= y then 1 else 0
-    , if b <= y then 1 else 0
-    , if c <= y then 1 else 0
-    , if d <= y then 1 else 0
-    )
-  end
-
-(* false when all zeroes *)
-fun someMask (mask: Int4.simd): bool =
-  let
-    val (a, b, c, d) = Int4.read mask
-  in
-    a = 1 orelse b = 1 orelse c = 1 orelse d = 1
-  end
-
-fun withMask old new mask =
-  let
-    val (a,b,c,d) = Real4.read old
-    val (e,f,g,h) = Real4.read new
-    val (m1,m2,m3,m4) = Int4.read mask
-  in
-    ( if m1 = 1 then e else a
-    , if m2 = 1 then f else b
-    , if m3 = 1 then g else c
-    , if m4 = 1 then h else d
-    )
-  end
+val one = Real4.mk (1.0, 1.0, 1.0, 1.0)
 
 
 (* 4 at a time *)
-fun mandelbrot (px4: int, py: int): Int4.simd =
+fun mandelbrot (px4: int, py: int): Real4.simd =
   let
     val x0 = scaleX px4
     val y0 = scaleY py
     fun go iter mask iters x y =
-      if (someMask mask andalso iter < 1000)
+      if (Real4.any mask andalso iter < 1000)
       then
         let
-          val newIters = Int4.add (iters, mask) (* increment with mask? *)
-          (* only update where mask is 1 *)
           val newX = Real4.add ((Real4.sub (Real4.mul (x,x), Real4.mul (y,y))), x0)
           val newY = Real4.adds (Real4.muls (Real4.mul (x,y), 2.0), y0)
+
           val cmp = Real4.add (Real4.mul (x, x), Real4.mul (y, y))
-          val newMask = le (cmp, 4.0)
+          val newMask = Real4.lts (cmp, 4.0)
         in
-          go (iter + 1) newMask newIters (withMask x newX mask) (withMask y newY mask)
+          go (iter + 1) newMask (Real4.blend (iters, Real4.add (iters, one), mask)) (Real4.blend (x, newX, mask)) (Real4.blend (y, newY, mask))
         end
       else iters
   in
-    go 0 (Int4.mk (1,1,1,1)) zeroi zero zero
+    go 0 (Real4.true_) zero zero zero
   end
 
 
-val set: Int4.simd Array2.array = Array2.tabulate Array2.ColMajor (width, height, mandelbrot)
-
+val set: Real4.simd Array2.array = Array2.tabulate Array2.ColMajor (width, height, mandelbrot)
 
 val _ =
   let
-    fun showSimd (x: Int4.simd) =
+    fun showSimd (x: Real4.simd) =
       let
-        val (a,b,c,d) = Int4.read x
-      in (Int.toString a) ^ " " ^ (Int.toString b) ^ " " ^
-         (Int.toString c) ^ " " ^ (Int.toString d)
+        val (a,b,c,d) = Real4.read x
+      in (Int.toString (Real.floor a)) ^ " " ^ (Int.toString (Real.floor b)) ^ " " ^
+         (Int.toString (Real.floor c)) ^ " " ^ (Int.toString (Real.floor d))
       end
     val _ = print "P2\n"
     val _ = print ((Int.toString (width * Real4.size)) ^ " " ^ (Int.toString height) ^ "\n")
