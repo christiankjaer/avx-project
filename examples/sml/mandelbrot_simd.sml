@@ -29,7 +29,7 @@ fun scale (from: real, to: real, dom: real) (x: int): real =
 
 fun scaleX (x: int): Real4.simd =
   let
-    val xr = Real.fromInt x * 4.0
+    val xr = Real.fromInt (x * Real4.size)
     val x0 = Real4.mk (xr, xr + 1.0, xr + 2.0, xr + 3.0)
   in
     Real4.adds (Real4.muls (Real4.divs (x0, imageWidth), (right - left)), left)
@@ -65,17 +65,17 @@ fun mandelbrot (py: int, px4: int): Real4.simd =
     go 0 (Real4.true_) zero zero zero
   end
 
+fun showSimd (x: Real4.simd) =
+  let
+    val (a,b,c,d) = Real4.read x
+  in (Int.toString (Real.floor a)) ^ " " ^ (Int.toString (Real.floor b)) ^ " " ^
+     (Int.toString (Real.floor c)) ^ " " ^ (Int.toString (Real.floor d))
+  end
 
 val set: Real4.simd Array2.array = Array2.tabulate Array2.RowMajor (height, width, mandelbrot)
 
 val _ =
   let
-    fun showSimd (x: Real4.simd) =
-      let
-        val (a,b,c,d) = Real4.read x
-      in (Int.toString (Real.floor a)) ^ " " ^ (Int.toString (Real.floor b)) ^ " " ^
-         (Int.toString (Real.floor c)) ^ " " ^ (Int.toString (Real.floor d))
-      end
     val _ = print "P2\n"
     val _ = print ((Int.toString (width * Real4.size)) ^ " " ^ (Int.toString height) ^ "\n")
     val _ = print "1000\n"
