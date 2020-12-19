@@ -7,25 +7,27 @@ type interface = real * real * real * real
 type simd = m256d
 type mask = m256d
 
-fun mk (a: real, b: real, c: real, d: real): m256d = prim("__blockf64", (a,b,c,d))
+fun mk (a: real, b: real, c: real, d: real): simd = prim("__blockf64", (a,b,c,d))
 
-fun index (v: m256d, i: int): real = prim("__blockf64_sub_real", (v, i))
+fun index (v: simd, i: int): real = prim("__blockf64_sub_real", (v, i))
 
-fun read (v: m256d): real * real * real * real =
+fun read (v: simd): real * real * real * real =
   (index (v,1), index (v,2), index (v,3), index (v,4))
 
-fun broadcast (a: real): m256d = prim("__m256d_broadcast", a)
-fun lt (a: m256d, b: m256d): mask = prim("__m256d_less", (a,b))
+fun broadcast (a: real): simd = prim("__m256d_broadcast", a)
+fun lt (a: simd, b: simd): mask = prim("__m256d_less", (a,b))
+fun le (a: simd, b: simd): mask = prim("__m256d_lesseq", (a,b))
+fun gt (a: simd, b: simd): mask = prim("__m256d_greater", (a,b))
+fun ge (a: simd, b: simd): mask = prim("__m256d_greatereq", (a,b))
 
-(* fun blend (a: m256d, b: m256d, m: mask): simd = prim("__m256d_blend", (a,b,m))
+fun blend (a: simd, b: simd, m: mask): simd = prim("__m256d_blend", (a,b,m))
 
 fun all (a: mask): bool = prim("__m256d_all", a)
 fun any (a: mask): bool = prim("__m256d_any", a)
-  *)
 
 fun printReal (n:real): unit = prim("printReal",n)
 
-fun printM256d (x: m256d) =
+fun printM256d (x: simd) =
 let
   val x1 = index(x, 0)
   val x2 = index(x, 1)
@@ -36,10 +38,13 @@ end
 
 fun f () =
 let
-  val x: simd = mk (1.0, 2.0, 3.0, 4.0)
-  val y: simd = mk (4.0, 3.0, 2.0, 1.0)
+  val x = mk (2.0, 3.0, 4.0, 5.0)
+  val y = mk (3.0, 3.0, 3.0, 3.0)
+  val ones = broadcast 1.0
+  val zeros = broadcast 0.0
+  val cmp = gt (x, y)
 in 
-  lt (x, y)  
+  printM256d (blend (ones, zeros, cmp))
 end
 
-val _ = printM256d (f ())
+val _ = f ()
