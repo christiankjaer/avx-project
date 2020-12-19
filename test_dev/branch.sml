@@ -15,15 +15,13 @@ fun read (v: m256d): real * real * real * real =
   (index (v,1), index (v,2), index (v,3), index (v,4))
 
 fun broadcast (a: real): m256d = prim("__m256d_broadcast", a)
+fun lt (a: m256d, b: m256d): mask = prim("__m256d_less", (a,b))
 
-fun add (a: m256d, b: m256d): m256d = prim("__m256d_plus", (a, b))
-fun adds (a: m256d, b: real): m256d = add(a, broadcast(b))
+(* fun blend (a: m256d, b: m256d, m: mask): simd = prim("__m256d_blend", (a,b,m))
 
-fun mul (a: m256d, b: m256d): m256d = prim("__m256d_mul", (a, b))
-fun muls (a: m256d, b: real): m256d = mul(a, broadcast(b))
-
-fun sub (a: m256d, b: m256d): m256d = prim("__m256d_minus", (a, b))
-fun subs (a: m256d, b: real): m256d = sub(a, broadcast(b))
+fun all (a: mask): bool = prim("__m256d_all", a)
+fun any (a: mask): bool = prim("__m256d_any", a)
+  *)
 
 fun printReal (n:real): unit = prim("printReal",n)
 
@@ -36,17 +34,12 @@ let
 in printReal(x1); printReal(x2); printReal(x3); printReal(x4)
 end
 
-fun g (x: m256d) = add(x, mk (0.0, 1.0, 2.0, 3.0) )
-
 fun f () =
 let
-  val a: m256d = mk (10.0, 20.0, 30.0, 40.0)
-  val b: m256d = mul(a, a)
-  val c: m256d = adds(b, 3.0)
-  val d: m256d = sub(c, a)
-  val e: m256d = g(d)
+  val x: simd = mk (1.0, 2.0, 3.0, 4.0)
+  val y: simd = mk (4.0, 3.0, 2.0, 1.0)
 in 
-  e
+  lt (x, y)  
 end
 
 val _ = printM256d (f ())

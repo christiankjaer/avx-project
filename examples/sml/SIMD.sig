@@ -24,8 +24,8 @@ signature SIMD = sig
   val lt : simd * simd -> mask
   val lts : simd * element -> mask
 
-  val eq : simd * simd -> mask
-  val eqs : simd * element -> mask
+  val geq : simd * simd -> mask
+  val geqs : simd * element -> mask
 
   val all : mask -> bool
   val any : mask -> bool

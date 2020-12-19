@@ -11,6 +11,29 @@ mul
 mul scalar
 
 
-
-
 Array SIMD slices.
+
+Implementer primops hele vejen ned.
+Måske noget med registerallokatoren
+
+
+Flag til oversætteren
+-- disable gc
+-- print call explicit
+-- no delete target files
+-- no basis lib
+
+Float er en unboxed version af real, som bruges intraproceduralt.
+Brug string som intern type
+
+
+-----
+
+Box skal tage allokeret lager som argument.
+
+allocStringML -- rå allokering af bytes.
+
+
+Kalde assignment på allerede allokerede ting
+
+Store for boxed vektor skal returnere unit

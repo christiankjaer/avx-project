@@ -41,30 +41,50 @@ A read function to read the familiar type again.
 Elementwise operations
 Scalar operations
 
-\subsection{Comparisons}
+\subsubsection{Comparisons}
 
 Mask type with all and any
 
-\subsection{Masks}
+\subsubsection{Masks}
 
 Blend
 
-\subsection{Handling arrays of odd length}
+\subsubsection{Handling arrays of odd length}
 
 
 
 
 
 
-\subsection{Vectorizing a simple function}
+\subsubsection{Vectorizing a simple function}
 
 
+\subsection{Implementation in the MLKit}
 
+Boxed representation that is available to the programmer and an internal unboxed type that is available to the optimizer.
 
-\subsection{Foo}
+\subsection{Data types}
 
-Library in C with FFI
+Reuse register allocation of vector registers since they completely overlap with xmm. Just rename to ymm when they are used in a vector instruction.
 
-Intrinsics that the compiler understands
+\subsubsection{Primops}
+
+Both boxed and unboxed version of intrinsics. The unboxed ones are not available the the programmer, but are used internally in the optimizer.
+
+\subsubsection{Unboxing}
+
+Since Standard ML is polymorphic, there might be polymorphic functions that can receive arguments of any type. This is typically achieved by having a uniform representation of values. Typically a box (pointer to the underlying data). There is a substantial penalty for this, since in order to do operations on the underlying value, there is a level of indirection. For our new vector type we will have to use 16 bytes of memory in addition to the pointer to represent something that typically fits in a register.
+
+Any operation that works on a boxed representation will typically have to unbox the data, do the operation and box the result again. This is very costly on modern hardware.
+
+In some sense
+\[
+    box (unbox\ x) \equiv x
+\]
+and
+\[
+    unbox (box\ x) \equiv x
+\]
+
 
 \end{document}
