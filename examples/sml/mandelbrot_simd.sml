@@ -11,6 +11,7 @@ structure Real4 = Tup4(
 
     fun eq (x, y) = Real.compare (x, y) = EQUAL
     fun lt (x, y) = Real.compare (x, y) = LESS
+    fun ge (x, y) = Real.compare (x, y) = GREATER
   end)
 
 val imageWidth = Real.fromInt (width * Real4.size)

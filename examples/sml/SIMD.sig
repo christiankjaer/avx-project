@@ -1,8 +1,8 @@
 signature SIMD = sig
   val size : int
 
-  type element
-  type interface
+  type element = real
+  type interface = real * real * real * real
 
   type simd
   type mask
@@ -24,8 +24,8 @@ signature SIMD = sig
   val lt : simd * simd -> mask
   val lts : simd * element -> mask
 
-  val geq : simd * simd -> mask
-  val geqs : simd * element -> mask
+  val ge : simd * simd -> mask
+  val ges : simd * element -> mask
 
   val all : mask -> bool
   val any : mask -> bool

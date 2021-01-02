@@ -2,8 +2,6 @@ functor Tup4(Elm: ELEMENT) : SIMD = struct
 
   val size = 4
 
-  type element = Elm.t
-  type interface = Elm.t * Elm.t * Elm.t * Elm.t
   type simd = Elm.t * Elm.t * Elm.t * Elm.t
   type mask = bool * bool * bool * bool
   
@@ -55,5 +53,11 @@ functor Tup4(Elm: ELEMENT) : SIMD = struct
 
   fun lts ((a1, a2, a3, a4), s) =
     (Elm.lt (a1, s), Elm.lt (a2, s), Elm.lt (a3, s), Elm.lt (a4, s))
+
+  fun ge ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
+    (Elm.ge (a1, b1), Elm.ge (a2, b2), Elm.ge (a3, b3), Elm.ge (a4, b4))
+
+  fun ges ((a1, a2, a3, a4), s) =
+    (Elm.ge (a1, s), Elm.ge (a2, s), Elm.ge (a3, s), Elm.ge (a4, s))
 
 end

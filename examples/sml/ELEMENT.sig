@@ -6,4 +6,5 @@ signature ELEMENT = sig
   val divi : t * t -> t
   val eq : t * t -> bool
   val lt : t * t -> bool
+  val ge : t * t -> bool
 end

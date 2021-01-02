@@ -1,33 +1,34 @@
-structure Int4 = Tup4(
-  struct
-    type t = int
-    val add = op +
-    val sub = op -
-    val mul = op *
-  end)
+functor SimdTest(Vec: SIMD) =
+struct
 
-structure Real4 = Tup4(
-  struct
-    type t = real
-    fun add (x, y) = (x + y): real
-    fun sub (x, y) = (x - y): real
-    fun mul (x, y) = (x * y): real
-  end)
+  fun stringOfFloat (x: real): string = prim("stringOfFloat", x)
 
+  fun printVec (x: Vec.simd) =
+  let
+    val (a,b,c,d): real * real * real * real = Vec.read x
+    val str =
+      "(" ^ stringOfFloat(a) ^ ", "
+          ^ stringOfFloat(b) ^ ", "
+          ^ stringOfFloat(c) ^ ", "
+          ^ stringOfFloat(d) ^ ", " ^ ")\n"
+  in
+    print str
+  end
 
-val x: Int4.simd = Int4.mk (1,2,3,4)
+  fun g (x: Vec.simd) = Vec.add(x, Vec.mk (0.0, 1.0, 2.0, 3.0) )
 
-val y: Int4.simd = Int4.mk (5,6,7,8)
+  fun test (): unit =
+  let
+    val a: Vec.simd = Vec.mk (10.0, 20.0, 30.0, 40.0)
+    val b: Vec.simd = Vec.mul(a, a)
+    val c: Vec.simd = Vec.adds(b, 3.0)
+    val d: Vec.simd = Vec.sub(c, a)
+    val e: Vec.simd = g(d)
+  in 
+    printVec e
+  end
+end
 
-val res = Int4.read (Int4.mul (x, y))
+structure TestStruct = SimdTest(M256d)
 
-val _ = print (Int.toString (#1 res))
-val _ = print "\n"
-
-val z: Real4.simd = Real4.mk (1.0,2.0,3.0,4.0)
-
-val zz: Real4.simd = Real4.mk (5.0,6.0,7.0,8.0)
-
-val res2 = Real4.read (Real4.mul (z, zz))
-
-val _ = print (Real.toString (#1 res2))
+val _ = TestStruct.test ()
