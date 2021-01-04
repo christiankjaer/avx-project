@@ -1,6 +1,7 @@
 \documentclass{article}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
+\usepackage{hyperref}
 
 \title{Extending MLKit with vector instructions}
 \author{Christian Kjær Larsen}
@@ -9,7 +10,57 @@
 
 \maketitle
 
-\section{SIMD}
+\section{Introduction}
+
+In this section we will briefly describe the project, its purpose and the structure of this report.
+
+\subsection{Project statement}
+
+The goal of this project is to add packed vector support to the MLKit\cite{mlkit} Standard ML compiler using the AVX2 vector instructions present in modern Intel processors. The motivation is to be able to use this support to optimize programs written in Standard ML to exploit data parallism.
+
+\subsection{Roadmap}
+
+\begin{enumerate}
+    \item We start by investingating other approaches to SIMD programming in higher level languages. This is in order to settle on a
+        good abstraction that is fairly easy to program with.
+    \item
+        We then continue by designing a programming abstraction to be able to optimize a program in a generic way that is not tied to a particular instruction set or vector extensions.
+        We also write some simple example programs that will work as motivating examples and show that the abstraction is actually useful.
+    \item
+        Finally we implement compiler support for Intel AVX in the MLKit Standard ML compiler by providing a set of intrinsics that compile to efficient code that use native vector instructions.
+\end{enumerate}
+
+\section{Background}
+
+\subsection{Vector instructions in modern CPUs}
+
+MMX, SSE and AVX in Intel processors.
+
+Neon on ARM processors.
+
+\subsection{Programming model and higher level languages}
+
+\subsubsection{Intrinsics}
+
+Intrinsic functions for C/C++ guaranteeing what code is generated when the functions are called.
+
+\subsubsection{Rust}
+
+Standard interface to generic functions that are lowered directly to LLVM and compiled for specific architectures there.
+\url{https://github.com/rust-lang/stdsimd}
+
+\subsubsection{.NET and Java}
+
+\url{https://docs.microsoft.com/en-us/dotnet/api/system.numerics.vector?view=net-5.0}
+
+
+\subsubsection{Challenges}
+
+Do not tie the implementations to tightly to the specific instruction set. It should be fairly easy to change a program from say AVX2 to Neon.
+
+\section{Design}
+
+\section{Implementation}
 
 \subsection{Modern hardware support}
 
@@ -86,5 +137,7 @@ and
     unbox (box\ x) \equiv x
 \]
 
+\bibliographystyle{unsrt}
+\bibliography{simd}
 
 \end{document}
