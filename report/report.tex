@@ -2,9 +2,14 @@
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{hyperref}
+\usepackage{listings}
+
+\lstset{language=ML}
 
 \title{Extending MLKit with vector instructions}
 \author{Christian Kjær Larsen}
+
+
 
 \begin{document}
 
@@ -60,31 +65,42 @@ Do not tie the implementations to tightly to the specific instruction set. It sh
 
 \section{Design}
 
-\section{Implementation}
-
-\subsection{Modern hardware support}
-
-\subsection{GCC}
-
-Intrinsic functions.
-
-Generic vector operations
-
-\subsection{Higher level languages}
-
-For C-sharp, System.Numeric.Vectors
-
-For Java, jdk.incubator.vector
-
+MLKit has a 64 bit intel backend, and and we restrict ourselves to vectors of reals (64 bit floats) of 4 elements. This is supported by AVX2 which is widely supported now.
 
 \section{Implementation}
 
 
 \subsection{Generic interface}
 
+\begin{lstlisting}[frame=single]
+signature SIMD4 = sig
+  type element = real
+  type interface = real * real * real * real
 
-A make function from a familar type, typically a tuple of elements.
-A read function to read the familiar type again.
+  type simd
+  type mask
+
+  val mk : interface -> simd
+  val read : simd -> interface
+
+  (* arithmetic operations (vectors and scalars) *)
+  val add : simd * simd -> simd
+  val adds : simd * element -> simd
+  (* and so on *)
+
+  (* comparisons (vectors and scalars) *)
+  val lt : simd * simd -> mask
+  val lts : simd * element -> mask
+  (* and so on *)
+
+  (* predicates *)
+  val all : mask -> boolean
+  val any : mask -> boolean
+
+  (* conditional operations *)
+  val blend : simd * simd * mask -> simd
+end
+\end{lstlisting}
 
 
 \subsubsection{Arithmetic}
@@ -98,16 +114,66 @@ Mask type with all and any
 
 \subsubsection{Masks}
 
-Blend
+Blend that 
 
 \subsubsection{Handling arrays of odd length}
 
 
+Basically a fast map on arrays with a mask at the end.
+Tabulate would be nice.
+
+Have like a RealTable but with SIMD operations. Odd lengths would be handled by blend.
+
+\subsubsection{Vectorizing mandelbrot}
+
+In the classic mandelbrot algorithm, a single pixel is calculated by applying a function to a coordinate until divergence.
+
+\begin{lstlisting}
+fun mandelbrot (px: int, py: int): int =
+  let
+    val x0 = scaleX px
+    val y0 = scaleY py
+    fun go iter x y =
+      if (x*x + y*y <= 4.0 andalso iter < 1000)
+      then go (iter + 1) (x*x - y*y + x0) (2.0*x*y + y0)
+      else iter
+  in
+    go 0 0.0 0.0
+  end
+\end{lstlisting}
+
+Using our structure we can compute 4 pixels at the same time using vector operations.
+
+\begin{lstlisting}
+functor Mandelbrot(Vec: SIMD4) = struct
+  val zero = Vec.mk (0.0, 0.0, 0.0, 0.0)
+  val one = Vec.mk (1.0, 1.0, 1.0, 1.0)
+
+  fun mandelbrot (px: int, py: int): Vec.simd =
+    let
+      val x0: Vec.simd = scaleX px
+      val y0: real = scaleY py
+      fun go iter mask x =
+        if (Vec.any mask andalso iter < 1000) then
+          let
+            val cmp = Vec.add (Vec.mul (x, x), Vec.mul (y, y))
+            val newMask = Vec.lts (cmp, 4.0)
+            val updated = Vec.blend (iters, Vec.add (iters, one), mask)
+            val newX = Vec.blend (x, computeX, mask)
+            val newY = Vec.blend (x, computeY, mask)
+          in
+            go (iter + 1) newMask updated newX newY
+          end
+        else iters
+    in
+      go 0 Vec.true zero zero zero
+    end
+end
+\end{lstlisting}
+
+We use the \verb!blend! function to conditionally update element only when the if-condition in the original program would have been true. It is not super high level, so it feels a bit like manually programming with low level vectors, but that is the point. We can use the module to optimize library functions for efficiency.
 
 
-
-
-\subsubsection{Vectorizing a simple function}
 
 
 \subsection{Implementation in the MLKit}
