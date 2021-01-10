@@ -5,6 +5,7 @@
 \usepackage{listings}
 
 \lstset{language=ML}
+\lstset{basicstyle=\footnotesize\ttfamily,breaklines=true}
 
 \title{Extending MLKit with vector instructions}
 \author{Christian Kjær Larsen}
@@ -173,22 +174,55 @@ end
 
 We use the \verb!blend! function to conditionally update element only when the if-condition in the original program would have been true. It is not super high level, so it feels a bit like manually programming with low level vectors, but that is the point. We can use the module to optimize library functions for efficiency.
 
-
-
-
 \subsection{Implementation in the MLKit}
 
 Boxed representation that is available to the programmer and an internal unboxed type that is available to the optimizer.
 
 \subsection{Data types}
 
-Reuse register allocation of vector registers since they completely overlap with xmm. Just rename to ymm when they are used in a vector instruction.
+The MLKit has a boxed floating point representation accessible to the programmer as the \verb!real! type in Standard ML. Internally in the optimizer, unnessecary boxing operations are avoided by using unboxed operations directly on floating point registers thereby avoiding expensive memory operations in basic blocks. Due to the uniform memory represenation, these unboxed floats can not be passed to generic functions and should therefore not be exposed to the programmer.
+
+We will do something similar for our vector representation. A boxed representation will be visible to the programmer, but internally a \verb!F256! type will be used to represent a register containing 4 64-bit floating point numbers.
+
+\subsection{Primops}
+
+Except for memory operations, the primops will correspond directly to the AVX2 instructions. For now borrowing from intel terminology, \verb!__m256d! will be the prefix for operations on sets of 4 reals.
+
+\subsubsection{Loading and storing}
+
+\subsubsection{Arithmetic operations}
+
+\verb!__m256d_broadcast! will broadcast one \verb!real! into all 4 elements of a 4 element vector.
+
+\verb!__m256d_plus! will do vector addition. We will have similar primops for other arithmetic operations.
+
+\subsubsection{Conditional operations and masks}
+
+The conditional operations all have the type \verb!m256d -> m256d -> mask! where the mask is also a vector residing in a vector register.
+
+\verb!__m256d_blend! has the type \verb!m256d -> m256d -> mask -> m256d! where we can blend two vectors based on a mask.
+
+\verb!__m256d_all!, \verb!__m256d_any! have the type \verb!mask -> bool!
+
+The instruction \verb!vmovmsk! will move the 4 bit masks into an integer register and we can then implement the conditional operations.
+
+For \verb!all! we move \verb!true! into the destination if the mask is $1111$ otherwise we set it to \verb!false!.
+For \verb!any! we move \verb!true! into the destination if the mask is not $0000$ otherwise we set it to \verb!false!.
 
 \subsubsection{Primops}
 
 Both boxed and unboxed version of intrinsics. The unboxed ones are not available the the programmer, but are used internally in the optimizer.
 
-\subsubsection{Unboxing}
+\subsubsection{Boxing}
+
+An representation of a boxing operation \verb!__f256_box! will be rewritten in a final step of the optimizer to be
+\begin{lstlisting}
+let
+  val box = alloc_vector ()
+  val ()  = store_vector (value, box)
+in box
+\end{lstlisting}
+Where the two operations will be distinct primops. This makes it easier to manipulate boxing operations internally in the optimizer.
 
 Since Standard ML is polymorphic, there might be polymorphic functions that can receive arguments of any type. This is typically achieved by having a uniform representation of values. Typically a box (pointer to the underlying data). There is a substantial penalty for this, since in order to do operations on the underlying value, there is a level of indirection. For our new vector type we will have to use 16 bytes of memory in addition to the pointer to represent something that typically fits in a register.
 
@@ -202,6 +236,104 @@ and
 \[
     unbox (box\ x) \equiv x
 \]
+
+\section{Testing}
+
+\subsection{Inspecting assembly code from example programs}
+
+We make som functions that calls the primops with the right types.
+\begin{lstlisting}
+type m256d = string
+fun broadcast (a: real): m256d = prim("__m256d_broadcast", a)
+fun add (a: m256d, b: m256d): m256d = prim("__m256d_plus", (a, b))
+fun adds (a: m256d, b: real): m256d = add(a, broadcast(b))
+
+fun mul (a: m256d, b: m256d): m256d = prim("__m256d_mul", (a, b))
+fun muls (a: m256d, b: real): m256d = mul(a, broadcast(b))
+
+fun sub (a: m256d, b: m256d): m256d = prim("__m256d_minus", (a, b))
+fun subs (a: m256d, b: real): m256d = sub(a, broadcast(b))
+\end{lstlisting}
+A simple example program only consisting of arithmetic operations.
+\begin{lstlisting}
+fun g (x: m256d) = add (x, mk (0.0, 1.0, 2.0, 3.0))
+fun f () =
+let
+  val a: m256d = mk (10.0, 20.0, 30.0, 40.0)
+  val b: m256d = mul (a, a)
+  val c: m256d = adds (b, 3.0)
+  val d: m256d = sub (c, a)
+  val e: m256d = g d
+in 
+  e
+end
+\end{lstlisting}
+The core of the generated assembly code is the following
+\begin{verbatim}
+vmulpd %ymm10,%ymm10,%ymm12
+movq $DLab.FloatLab51747simd.auto.mlbsimd.sml1,%r10
+movsd (%r10),%xmm8
+vbroadcastsd %xmm8,%ymm8
+vaddpd %ymm8,%ymm12,%ymm8
+vsubpd %ymm10,%ymm8,%ymm4
+xorps %xmm8,%xmm8
+movq $DLab.FloatLab50746simd.auto.mlbsimd.sml1,%r10
+movsd (%r10),%xmm10
+movq $DLab.FloatLab49745simd.auto.mlbsimd.sml1,%r10
+movsd (%r10),%xmm12
+movq $DLab.FloatLab48744simd.auto.mlbsimd.sml1,%r10
+movsd (%r10),%xmm2
+leaq 16(%rsp),%rsi
+movsd %xmm8,8(%rsi)
+movsd %xmm10,16(%rsi)
+movsd %xmm12,24(%rsi)
+movsd %xmm2,32(%rsi)
+vmovupd 8(%rsi),%ymm8
+vaddpd %ymm8,%ymm4,%ymm8
+\end{verbatim}
+Disregarding the loading of vector literals, the resulting code is fully unboxed and just has a series of vector instructions.
+
+For branching we want to print 1.0 if any of the elements of \verb!x! are greater than their corresponding element in \verb!y! and 0.0 otherwise.
+
+\begin{lstlisting}
+fun gt (a: simd, b: simd): mask = prim("__m256d_greater", (a,b))
+fun any (a: mask): bool = prim("__m256d_any", a)
+let
+  val x = mk (2.0, 3.0, 4.0, 5.0)
+  val y = mk (3.0, 3.0, 3.0, 3.0)
+  val b = any (gt (x, y))
+in 
+  if b then printReal 1.0 else printReal 0.0
+end
+\end{lstlisting}
+
+This generates the following code
+
+\begin{verbatim}
+  # Code to load x into ymm8 y into ymm12 above
+  vcmppd $0xE,%ymm8,%ymm12,%ymm8
+  vmovmskpd %ymm8,%rax
+  cmpq $0x0,%rax
+  movq $1,%rax
+  movq $3,%r10
+  cmovne %r10,%rax
+  cmpq $3,%rax
+  jne .LLab.newSelLab436branch.auto.mlbbranch.sml1
+  movq $DLab.FloatLab32437branch.auto.mlbbranch.sml1,%rdi
+  call printReal
+  jmp .LLab.exitSwitchLab434branch.auto.mlbbranch.sml1
+  .p2align 0x4
+.LLab.newSelLab436branch.auto.mlbbranch.sml1:
+  movq $DLab.FloatLab31435branch.auto.mlbbranch.sml1,%rdi
+  call printReal
+  .p2align 0x4
+.LLab.exitSwitchLab434branch.auto.mlbbranch.sml1:
+\end{verbatim}
+
+Again fully unboxed.
+
+\subsection{Performance}
+
 
 \bibliographystyle{unsrt}
 \bibliography{simd}
