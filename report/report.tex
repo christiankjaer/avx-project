@@ -130,10 +130,8 @@ Have like a RealTable but with SIMD operations. Odd lengths would be handled by 
 In the classic mandelbrot algorithm, a single pixel is calculated by applying a function to a coordinate until divergence.
 
 \begin{lstlisting}
-fun mandelbrot (px: int, py: int): int =
+fun mandelbrot (x0: real, y0: real): int =
   let
-    val x0 = scaleX px
-    val y0 = scaleY py
     fun go iter x y =
       if (x*x + y*y <= 4.0 andalso iter < 1000)
       then go (iter + 1) (x*x - y*y + x0) (2.0*x*y + y0)
@@ -143,22 +141,29 @@ fun mandelbrot (px: int, py: int): int =
   end
 \end{lstlisting}
 
-Using our structure we can compute 4 pixels at the same time using vector operations.
+The way to approach it is to consider 4 pixels $(x_1, y), \ldots, (x_4, y)$. The problem is that for 4 pixels it might be the case that some diverge and some converge. We can use masks to essentially block the updates for pixels that have converged already.
+
+We keep a mask $(\texttt{true}, \texttt{true}, \texttt{true}, \texttt{true})$ to signal whether a single pixel converged. We keep updating the iteration count while the corresponding element in the mask is \texttt{true}. We keep iterating as long as any make element is true or at some limit like the original algorithm.
+
+We can 
 
 \begin{lstlisting}
 functor Mandelbrot(Vec: SIMD4) = struct
   val zero = Vec.mk (0.0, 0.0, 0.0, 0.0)
   val one = Vec.mk (1.0, 1.0, 1.0, 1.0)
 
-  fun mandelbrot (px: int, py: int): Vec.simd =
+  fun mandelbrot (x0: Vec.simd, y0: real): Vec.simd =
     let
-      val x0: Vec.simd = scaleX px
-      val y0: real = scaleY py
       fun go iter mask x =
         if (Vec.any mask andalso iter < 1000) then
           let
-            val cmp = Vec.add (Vec.mul (x, x), Vec.mul (y, y))
-            val newMask = Vec.lts (cmp, 4.0)
+            val x2 = Vec.mul(x, x)
+            val y2 = Vec.mul(y, y)
+            val computeX = Vec.add (Vec.sub (x2, y2), x0)
+            val computeY = Vec.adds (Vec.muls (Vec.mul (x, y), 2.0), y0)
+
+            val newMask = Vec.lts (Vec.add(x2, y2), 4.0)
+
             val updated = Vec.blend (iters, Vec.add (iters, one), mask)
             val newX = Vec.blend (x, computeX, mask)
             val newY = Vec.blend (x, computeY, mask)

@@ -1,3 +1,4 @@
+local
 infix  7  * / div mod
 infix  6  + - ^
 infixr 5  :: @
@@ -75,7 +76,7 @@ fun scaleX (x: real): m256d =
   end
 
 fun scaleY (y: real) = scale (bottom, top, height) y
-
+in
 
 (* 4 at a time *)
 fun mandelbrot_simd (py: real, px4: real): m256d =
@@ -84,7 +85,7 @@ fun mandelbrot_simd (py: real, px4: real): m256d =
     val zero = broadcast 0.0
     val x0 = scaleX px4
     val y0 = scaleY py
-    fun go iter mask iters x y =
+    fun go (iter, mask, iters, x, y) =
       if (any mask andalso iter < 1000)
       then
         let
@@ -96,11 +97,12 @@ fun mandelbrot_simd (py: real, px4: real): m256d =
           val cmp = add (x2, y2)
           val newMask = lts (cmp, 4.0)
         in
-          go (iter + 1) newMask (blend (iters, add (iters, one), mask)) (blend (x, newX, mask)) (blend (y, newY, mask))
+          go ((iter + 1), newMask, (blend (iters, add (iters, one), mask)), (blend
+          (x, newX, mask)), (blend (y, newY, mask)))
         end
       else iters
   in
-    go 0 (le (zero, zero)) zero zero zero
+    go (0, (le (zero, zero)), zero, zero, zero)
   end
 
 val _ =
@@ -108,4 +110,5 @@ val _ =
     val res = printM256d (mandelbrot_simd (20.0, 70.0))
   in
     ()
+  end
   end

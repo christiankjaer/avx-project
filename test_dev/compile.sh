@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 
 rm -r MLB run
-../../mlkit/bin/mlkit --no_delete_target_files --no_basislib --no_gc -Pcee -Pole --comments_in_asmcode $1
+SML_LIB=../../mlkit ../../mlkit/bin/mlkit --no_delete_target_files --no_gc --no_basislib -Pcee -Pole --comments_in_asmcode -g --disable_atbot_analysis $1
+#mlkit --no_delete_target_files --no_gc --no_basislib -Pcee -Pole --comments_in_asmcode -g --disable_atbot_analysis $1

@@ -1,3 +1,4 @@
+local
 infix  7  * / div mod
 infix  6  + - ^
 infixr 5  :: @
@@ -13,19 +14,33 @@ fun a <> b = not (a = b)
 fun print (s:string) : unit = prim("printStringML", s)
 fun (s : string) ^ (s' : string) : string = prim ("concatStringML", (s, s'))
 
+type m256d = string
+
+fun broadcast (a: real): m256d = prim("__m256d_broadcast", a)
+fun printReal (n:real): unit = prim("printReal",n)
+fun intToReal (n:int): real = prim("realInt",n)
+fun mk (a: real, b: real, c: real, d: real): m256d = prim("__blockf64", (a,b,c,d))
+fun mul (a: m256d, b: m256d): m256d = prim("__m256d_mul", (a, b))
+fun add (a: m256d, b: m256d): m256d = prim("__m256d_plus", (a, b))
+
 
 structure BlockSimd = struct
+
 type t = chararray
+
 fun alloc (i:int) : t = prim("allocStringML", (8*i))
 fun update (t:t,i:int,v:real) : unit =
     prim("__blockf64_update_real", (t,i,v))
-fun update_m256 (t:t,i:int,v:m256) : unit =
-    prim("__blockf64_update_real", (t,i,v))
+fun update_m256d (t:t,i:int,v:m256d) : unit =
+    prim("__blockf64_update_m256d", (t,i,v))
 fun sub (t:t,i:int) : real =
     prim("__blockf64_sub_real", (t,i))
+fun sub_m256d (t:t,i:int) : m256d =
+    prim("__blockf64_sub_m256d", (t,i))
 fun length (t:t) : int =
     prim ("__blockf64_size", t)
 val maxLen = 12345678 (* arbitrarily chosen *)
+
 end
 
 structure RealTable = struct
@@ -66,8 +81,10 @@ fun tabulate (n, f : int -> real) : B.t =
     end
 
 fun tabulate_simd (n, f : int -> m256d) : B.t =
-  let fun init (t, f, i) = if i >= n then t
-                           else (B.update_simd
+    let fun init (t, f, i) = if i >= n then t
+			     else (B.update_m256d (t, i, f i); init (t, f, i+4))
+    in init (alloc_table n, f, 0) (* TODO: bounds checking with write mask or so *)
+    end
 
 
 fun vector a = tabulate (length a, fn i => B.sub(a,i))
@@ -160,7 +177,15 @@ fun map (f : elem -> elem) (a : B.t) : B.t =
     in lr 0
     end
 
-fun map_simd (f : m256d -> m256d)
+fun map_simd (f : m256d -> m256d) (a : B.t) : B.t =
+    let val n = length a
+        val b : B.t = B.alloc n   (* no check_size needed *)
+	fun lr j =
+	    if j < n then (B.update_m256d (b, j, f (B.sub_m256d (a, j)));
+                           lr (j+4))
+	    else b
+    in lr 0
+    end
 
 fun mapi (f : int * elem -> elem) (a : B.t) : B.t =
     let val stop = length a
@@ -173,4 +198,15 @@ fun mapi (f : int * elem -> elem) (a : B.t) : B.t =
     in lr 0; newvec
     end
 
+end
+in
+
+val _ =
+    let 
+        val t = RealTable.tabulate (12345678, (fn x => intToReal x))
+        val y = broadcast 7.0
+        val s = RealTable.map_simd (fn x => mul (add (x, y), x)) t
+    in
+        printReal (intToReal (RealTable.length s))
+    end
 end

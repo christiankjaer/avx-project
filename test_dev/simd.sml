@@ -1,4 +1,9 @@
+local
 type m256d = string
+
+infix  4  = <> > >= < <=
+
+fun op = (x: ''a, y: ''a): bool = prim ("=", (x, y))
 
 val size = 4
 
@@ -37,11 +42,13 @@ in printReal(x1); printReal(x2); printReal(x3); printReal(x4)
 end
 
 fun g (x: m256d) = add(x, mk (0.0, 1.0, 2.0, 3.0) )
+in
 
-fun f () =
+fun f (x: m256d) =
+if (ref false = ref true) then f x else
 let
   val a: m256d = mk (10.0, 20.0, 30.0, 40.0)
-  val b: m256d = mul(a, a)
+  val b: m256d = mul(a, x)
   val c: m256d = adds(b, 3.0)
   val d: m256d = sub(c, a)
   val e: m256d = g(d)
@@ -49,4 +56,5 @@ in
   e
 end
 
-val _ = printM256d (f ())
+val _ = printM256d (f (broadcast 3.0))
+end
