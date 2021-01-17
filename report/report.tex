@@ -195,6 +195,17 @@ Except for memory operations, the primops will correspond directly to the AVX2 i
 
 \subsubsection{Loading and storing}
 
+Reuse f64 blocks for both reading and writing to arrays and for boxing.
+
+\verb!blockf64_sub_m256d!
+
+\verb!blockf64_update_m256d!
+
+Can be used to implement a fast fold, map, etc. for unboxed arrays of reals.
+
+
+TODO: Make sure that memory accesses are aligned.
+
 \subsubsection{Arithmetic operations}
 
 \verb!__m256d_broadcast! will broadcast one \verb!real! into all 4 elements of a 4 element vector.
@@ -228,6 +239,9 @@ let
 in box
 \end{lstlisting}
 Where the two operations will be distinct primops. This makes it easier to manipulate boxing operations internally in the optimizer.
+
+
+We reuse the blockf64 primop for allocating boxes. This means that the stored 
 
 Since Standard ML is polymorphic, there might be polymorphic functions that can receive arguments of any type. This is typically achieved by having a uniform representation of values. Typically a box (pointer to the underlying data). There is a substantial penalty for this, since in order to do operations on the underlying value, there is a level of indirection. For our new vector type we will have to use 16 bytes of memory in addition to the pointer to represent something that typically fits in a register.
 
@@ -338,6 +352,14 @@ This generates the following code
 Again fully unboxed.
 
 \subsection{Performance}
+
+\section{Future work}
+
+Aligned memory accesses
+
+Unboxed tail recursive functions for tight loops.
+
+\section{Conclusion}
 
 
 \bibliographystyle{unsrt}
