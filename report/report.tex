@@ -256,7 +256,11 @@ and
     unbox (box\ x) \equiv x
 \]
 
-\section{Testing}
+\subsection{Data-parallel programming}
+
+Using the unboxed real array from MLKit, we implement vectorized traversals.
+
+\section{Evaluation}
 
 \subsection{Inspecting assembly code from example programs}
 
@@ -351,13 +355,68 @@ This generates the following code
 
 Again fully unboxed.
 
-\subsection{Performance}
+\subsection{Benchmarks}
+
+Using \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}}
+
+\subsubsection{Arithmetic}
+
+\begin{lstlisting}
+RealTable.modify (fun x => x * (x + x)) t
+\end{lstlisting}
+
+\begin{lstlisting}
+RealTable.modify_simd (fun x => Simd4.mul (x, Simd4.add (x, x))) t
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{ c c c }
+    Elements & Scalar (ms) & Vector (ms) \\
+    $10^4$ & $0.015$ & $0.004$ \\
+    $10^5$ & $0.155$ & $0.039$ \\
+    $10^6$ & $0.861$ & $0.425$ \\
+    $10^7$ & $18.413$ & $7.240$
+\end{tabular}
+\end{center}
+
+\subsubsection{Mandelbrot}
+
+\subsubsection{Conditionals}
+
+\begin{lstlisting}
+RealTable.modify (fun x => if x > 4096.0 then x else x * x) t
+\end{lstlisting}
+
+\begin{lstlisting}
+let val y = broadcast 4096.0
+in RealTable.modify_simd
+    (fun x => Simd4.blend (Simd4.mul (x, x), x, Simd4.gt (x, y)))
+    t
+\end{lstlisting}
+
+\begin{center}
+\begin{tabular}{ c c c }
+    Elements & Scalar (ms) & Vector (ms) \\
+    $10^4$ & $0.125$ & $0.005$ \\
+    $10^5$ & $1.332$ & $0.051$ \\
+    $10^6$ & $7.203$ & $0.453$ \\
+    $10^7$ & $70.075$ & $7.250$
+\end{tabular}
+\end{center}
+
+But this bechmark is a little misleading, since it uses a conditional move instruction instead of jumps, and therefore is highly efficient on modern hardware. The speed is of the vectorized version is comparable to the aritmetic program from before.
 
 \section{Future work}
 
 Aligned memory accesses
 
-Unboxed tail recursive functions for tight loops.
+Unboxed tail recursive functions for tight loops. Take for instance a sum function
+
+\begin{lstlisting}
+foldl Simd4.add (Simd4.broadcast) arr
+\end{lstlisting}
+
+foldl will probably be tailrecursively with a vector accumulator. This is the common way to do it. The problem is that we have to box and unbox for every 4 elements. The current boxing implementation is very expensive.
 
 \section{Conclusion}
 

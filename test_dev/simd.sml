@@ -17,7 +17,7 @@ fun mk (a: real, b: real, c: real, d: real): m256d = prim("__blockf64", (a,b,c,d
 fun index (v: m256d, i: int): real = prim("__blockf64_sub_real", (v, i))
 
 fun read (v: m256d): real * real * real * real =
-  (index (v,1), index (v,2), index (v,3), index (v,4))
+  (index (v,0), index (v,1), index (v,2), index (v,3))
 
 fun broadcast (a: real): m256d = prim("__m256d_broadcast", a)
 

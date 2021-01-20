@@ -76,7 +76,6 @@ fun scaleX (x: real): m256d =
   end
 
 fun scaleY (y: real) = scale (bottom, top, height) y
-in
 
 (* 4 at a time *)
 fun mandelbrot_simd (py: real, px4: real): m256d =
@@ -105,6 +104,7 @@ fun mandelbrot_simd (py: real, px4: real): m256d =
     go (0, (le (zero, zero)), zero, zero, zero)
   end
 
+in
 val _ =
   let
     val res = printM256d (mandelbrot_simd (20.0, 70.0))
