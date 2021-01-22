@@ -7,9 +7,9 @@ fun bench_reduction size =
           RealTable.foldli (fn (_, x, y) => y andalso x < 500.0) true t1)
 
         val t2 = RealTable.tabulate (size, (fn x => Real.fromInt x))
-        val blah = broadcast 500.0
+        val foo = broadcast 500.0
         val y = bench("Vector 1", fn () =>
-          RealTable.foldli_simd (fn (_, x, y) => y andalso all (lt (x, blah)))
+          RealTable.foldli_simd (fn (_, x, y) => y andalso all (lt (x, foo)))
           true t2)
 
         val t3 = RealTable.tabulate (size, (fn x => Real.fromInt x))
