@@ -417,6 +417,8 @@ The result for various array sizes are for Intel i5:
 \end{tabular}
 \end{center}
 
+It turns out that 
+
 \subsubsection{Mandelbrot}
 
 \subsubsection{Conditionals}
@@ -470,6 +472,8 @@ fun foo (x: m256d) =
 \texttt{foo} will have an unbox for each occurence of \texttt{x} in arithmetic operations. It would be better to make \texttt{val x' = unbox x} available in the scope, and then replace occurences of \texttt{unbox x} with \texttt{x'} when the boxed versions are expanded. This will require a bit more complicated analysis of the program. It might be combined with common subexpression elimination.
 
 \section{Conclusion}
+
+AMD is fucked.
 
 
 \bibliographystyle{unsrt}
