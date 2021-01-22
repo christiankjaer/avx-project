@@ -1,33 +1,41 @@
-functor Tup4(Elm: ELEMENT) : SIMD = struct
+structure Tup4 : REAL4 = struct
 
   val size = 4
+  type t = real * real * real * real
 
-  type simd = Elm.t * Elm.t * Elm.t * Elm.t
+  type element = real
+  type interface = t
+
+
+  type simd = t
   type mask = bool * bool * bool * bool
   
   fun mk a = a
   fun read a = a
 
-  fun add ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
-    (Elm.add (a1, b1), Elm.add (a2, b2), Elm.add (a3, b3), Elm.add (a4, b4))
+  fun add ((a1, a2, a3, a4): t, (b1, b2, b3, b4): t) =
+    (a1 + b1, a2 + b2, a3 + b3, a4 + b4)
 
-  fun sub ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
-    (Elm.sub (a1, b1), Elm.sub (a2, b2), Elm.sub (a3, b3), Elm.sub (a4, b4))
+  fun sub ((a1, a2, a3, a4): t, (b1, b2, b3, b4): t) =
+    (a1 - b1, a2 - b2, a3 - b3, a4 - b4)
 
-  fun subs ((a1, a2, a3, a4), b) =
-    (Elm.sub (a1, b), Elm.sub (a2, b), Elm.sub (a3, b), Elm.sub (a4, b))
+  fun subs ((a1, a2, a3, a4): t, b) =
+    (a1 - b, a2 - b, a3 - b, a4 - b)
 
-  fun adds ((a1, a2, a3, a4), b) =
-    (Elm.add (a1, b), Elm.add (a2, b), Elm.add (a3, b), Elm.add (a4, b))
+  fun adds ((a1, a2, a3, a4): t, b) =
+    (a1 + b, a2 + b, a3 + b, a4 + b)
 
-  fun mul ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
-    (Elm.mul (a1, b1), Elm.mul (a2, b2), Elm.mul (a3, b3), Elm.mul (a4, b4))
+  fun mul ((a1, a2, a3, a4): t, (b1, b2, b3, b4): t) =
+    (a1 * b1, a2 * b2, a3 * b3, a4 * b4)
 
-  fun muls ((a1, a2, a3, a4), b) =
-    (Elm.mul (a1, b), Elm.mul (a2, b), Elm.mul (a3, b), Elm.mul (a4, b))
+  fun muls ((a1, a2, a3, a4): t, b) =
+    (a1 * b, a2 * b, a3 * b, a4 * b)
 
-  fun divs ((a1, a2, a3, a4), b) =
-    (Elm.divi (a1, b), Elm.divi (a2, b), Elm.divi (a3, b), Elm.divi (a4, b))
+  fun divv ((a1, a2, a3, a4): t, (b1, b2, b3, b4): t) =
+    (a1 / b1, a2 / b2, a3 / b3, a4 / b4)
+
+  fun divs ((a1, a2, a3, a4): t, b) =
+    (a1 / b, a2 / b, a3 / b, a4 / b)
 
   fun blend ((a1, a2, a3, a4), (b1, b2, b3, b4), (m1, m2, m3, m4)) =
     ( if m1 then b1 else a1
@@ -39,25 +47,34 @@ functor Tup4(Elm: ELEMENT) : SIMD = struct
   fun all (m1, m2, m3, m4) = m1 andalso m2 andalso m3 andalso m4
   fun any (m1, m2, m3, m4) = m1 orelse m2 orelse m3 orelse m4
 
+  fun sum ((m1, m2, m3, m4): t) = m1 + m2 + m3 + m4
+  fun product ((m1, m2, m3, m4): t) = m1 * m2 * m3 * m4
+
   val true_ = (true, true, true, true)
   val false_ = (false, false, false, false)
 
-  fun eq ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
-    (Elm.eq (a1, b1), Elm.eq (a2, b2), Elm.eq (a3, b3), Elm.eq (a4, b4))
+  fun lt ((a1, a2, a3, a4): t, (b1, b2, b3, b4): t) =
+    (a1 < b1, a2 < b2, a3 < b3, a4 < b4)
 
-  fun eqs ((a1, a2, a3, a4), s) =
-    (Elm.eq (a1, s), Elm.eq (a2, s), Elm.eq (a3, s), Elm.eq (a4, s))
+  fun lts ((a1, a2, a3, a4): t, b) =
+    (a1 < b, a2 < b, a3 < b, a4 < b)
 
-  fun lt ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
-    (Elm.lt (a1, b1), Elm.lt (a2, b2), Elm.lt (a3, b3), Elm.lt (a4, b4))
+  fun le ((a1, a2, a3, a4): t, (b1, b2, b3, b4): t) =
+    (a1 <= b1, a2 <= b2, a3 <= b3, a4 <= b4)
 
-  fun lts ((a1, a2, a3, a4), s) =
-    (Elm.lt (a1, s), Elm.lt (a2, s), Elm.lt (a3, s), Elm.lt (a4, s))
+  fun les ((a1, a2, a3, a4): t, b) =
+    (a1 <= b, a2 <= b, a3 <= b, a4 <= b)
 
-  fun ge ((a1, a2, a3, a4), (b1, b2, b3, b4)) =
-    (Elm.ge (a1, b1), Elm.ge (a2, b2), Elm.ge (a3, b3), Elm.ge (a4, b4))
+  fun gt ((a1, a2, a3, a4): t, (b1, b2, b3, b4): t) =
+    (a1 > b1, a2 > b2, a3 > b3, a4 > b4)
 
-  fun ges ((a1, a2, a3, a4), s) =
-    (Elm.ge (a1, s), Elm.ge (a2, s), Elm.ge (a3, s), Elm.ge (a4, s))
+  fun gts ((a1, a2, a3, a4): t, b) =
+    (a1 > b, a2 > b, a3 > b, a4 > b)
+
+  fun ge ((a1, a2, a3, a4):t , (b1, b2, b3, b4): t) =
+    (a1 >= b1, a2 >= b2, a3 >= b3, a4 >= b4)
+
+  fun ges ((a1, a2, a3, a4): t, b) =
+    (a1 >= b, a2 >= b, a3 >= b, a4 >= b)
 
 end
