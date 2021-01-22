@@ -370,6 +370,8 @@ Again fully unboxed.
 
 In this section we will benchmark small example programs and try to explain why they are fast, or why in some cases they are slower than expected.
 
+\url{https://www.agner.org/optimize/blog/read.php?i=838}
+
 Using \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}}
 
 \subsubsection{Arithmetic}
@@ -391,7 +393,7 @@ in
   RealTable.modify_simd (fun x => mul (x, add (x, two))) t
 end
 \end{lstlisting}
-The result for various array sizes are:
+The result for various array sizes are for AMD Ryzen:
 \begin{center}
 \begin{tabular}{ c c c c }
     Elements & Scalar (ms) & Vector 1 & Vector 2 (ms) \\
@@ -400,6 +402,18 @@ The result for various array sizes are:
     $10^6$ & $1.013$ & $18.494$ & $0.489$ \\
     $10^7$ & $17.518$ & $216.674$ & $7.184$ \\
     $10^8$ & $182.967$ & $2175.133$ & $74.729$ \\
+\end{tabular}
+\end{center}
+
+The result for various array sizes are for Intel i5:
+\begin{center}
+\begin{tabular}{ c c c c }
+    Elements & Scalar (ms) & Vector 1 & Vector 2 (ms) \\
+    $10^4$ & $0.121$ & $0.043$ & $0.028$ \\
+    $10^5$ & $1.262$ & $0.758$ & $0.290$ \\
+    $10^6$ & $6.000$ & $4.361$ & $1.027$ \\
+    $10^7$ & $33.639$ & $21.238$ & $12.373$ \\
+    $10^8$ & $354.351$ & $166.834$ & $119.857$ \\
 \end{tabular}
 \end{center}
 
