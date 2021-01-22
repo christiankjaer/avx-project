@@ -324,7 +324,7 @@ fun bench_branch size =
 
 val _ =
   let
-    val _ = bench_simple (4096*8192)
+    val _ = bench_sum (8)
   in ()
   end
 

@@ -11,6 +11,8 @@ signature REAL4 = sig
   val mk : interface -> simd
   val read : simd -> interface
 
+  val broadcast : element -> simd
+
   val add : simd * simd -> simd
   val adds : simd * element -> simd
 

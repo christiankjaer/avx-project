@@ -366,27 +366,40 @@ This generates the following code
 
 Again fully unboxed.
 
-\subsection{Benchmarks}
+\subsection{Evaluation}
+
+In this section we will benchmark small example programs and try to explain why they are fast, or why in some cases they are slower than expected.
 
 Using \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}}
 
 \subsubsection{Arithmetic}
 
+For the first case we will consider modifying an array $[x_1, \ldots, x_n]$ to $[x_1(x_1 + 2), \ldots, x_n(x_n + 2)]$. The code to beat is:
 \begin{lstlisting}
-RealTable.modify (fun x => x * (x + x)) t
+RealTable.modify (fun x => x * (x + 2.0)) t
 \end{lstlisting}
 
+We consider two versions. One that will make a scalar addition, which will do a broadcast with $2.0$ for each iteration:
 \begin{lstlisting}
-RealTable.modify_simd (fun x => Simd4.mul (x, Simd4.add (x, x))) t
+RealTable.modify_simd (fun x => mul (x, adds (x, 2.0))) t
 \end{lstlisting}
-
+The second one will store a vector $\{ 2.0, 2.0, 2.0, 2.0 \}$, and do vector addition for each iteration. This will require a memory operation instead of a broadcast.
+\begin{lstlisting}
+let
+  val two = broadcast 2.0
+in
+  RealTable.modify_simd (fun x => mul (x, add (x, two))) t
+end
+\end{lstlisting}
+The result for various array sizes are:
 \begin{center}
-\begin{tabular}{ c c c }
-    Elements & Scalar (ms) & Vector (ms) \\
-    $10^4$ & $0.015$ & $0.004$ \\
-    $10^5$ & $0.155$ & $0.039$ \\
-    $10^6$ & $0.861$ & $0.425$ \\
-    $10^7$ & $18.413$ & $7.240$
+\begin{tabular}{ c c c c }
+    Elements & Scalar (ms) & Vector 1 & Vector 2 (ms) \\
+    $10^4$ & $0.015$ & $0.312$ & $0.006$ \\
+    $10^5$ & $0.182$ & $2.787$ & $0.042$ \\
+    $10^6$ & $1.013$ & $18.494$ & $0.489$ \\
+    $10^7$ & $17.518$ & $216.674$ & $7.184$ \\
+    $10^8$ & $182.967$ & $2175.133$ & $74.729$ \\
 \end{tabular}
 \end{center}
 
@@ -428,6 +441,19 @@ foldl Simd4.add (Simd4.broadcast) arr
 \end{lstlisting}
 
 foldl will probably be tailrecursively with a vector accumulator. This is the common way to do it. The problem is that we have to box and unbox for every 4 elements. The current boxing implementation is very expensive.
+
+Common subexpression elimination to reduce unboxing load.
+
+Consider the function \texttt{foo}
+\begin{lstlisting}
+fun foo (x: m256d) =
+  let
+    val y = add (x, broadcast 2.0)
+    val z = foo x
+  in mul (z, x) end
+\end{lstlisting}
+
+\texttt{foo} will have an unbox for each occurence of \texttt{x} in arithmetic operations. It would be better to make \texttt{val x' = unbox x} available in the scope, and then replace occurences of \texttt{unbox x} with \texttt{x'} when the boxed versions are expanded. This will require a bit more complicated analysis of the program. It might be combined with common subexpression elimination.
 
 \section{Conclusion}
 

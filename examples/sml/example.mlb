@@ -1,5 +1,0 @@
-$(SML_LIB)/basis/basis.mlb
-ELEMENT.sig
-SIMD.sig
-tup4.sml
-test.sml

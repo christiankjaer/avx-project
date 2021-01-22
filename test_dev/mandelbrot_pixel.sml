@@ -22,6 +22,21 @@ type interface = real * real * real * real
 type simd = m256d
 type mask = m256d
 
+fun printReal (n:real): unit = prim("printReal",n)
+fun intToReal (n:int): real = prim("realInt",n)
+
+
+fun getrealtime () : {sec : int, usec : int} =
+  prim("sml_getrealtime", ())
+
+val timebase: int = prim("get_time_base", 0)
+
+type time = {sec : int, usec : int}
+
+fun toReal {sec, usec} = (intToReal sec - intToReal timebase) * 1000000.0 + intToReal usec
+
+fun timestamp () = toReal (getrealtime ())
+
 fun (x: real) / (y: real): real = prim ("divFloat", (x, y))
 
 fun mk (a: real, b: real, c: real, d: real): simd = prim("__blockf64", (a,b,c,d))
@@ -53,7 +68,8 @@ fun blend (a: m256d, b: m256d, m: mask): m256d = prim("__m256d_blend", (a,b,m))
 fun all (a: mask): bool = prim("__m256d_all", a)
 fun any (a: mask): bool = prim("__m256d_any", a)
 
-fun printReal (n:real): unit = prim("printReal",n)
+fun true_ (): mask = prim("__m256d_true", ())
+fun false_ (): mask = prim("__m256d_false", ())
 
 fun printM256d (x: m256d) =
 let
@@ -64,50 +80,61 @@ let
 in printReal(x1); printReal(x2); printReal(x3); printReal(x4)
 end
 
-fun scale (from: real, to: real, dom: real) (x: real): real =
-  (x / dom) * (to - from) + from
 
-fun scaleX (x: real): m256d =
+fun mandelbrot (y0: real, x0: real): int =
   let
-    val xr = x * size
-    val x0 = mk (xr, xr + 1.0, xr + 2.0, xr + 3.0)
+    fun go (iter, x, y) =
+      if (x*x + y*y <= 4.0 andalso iter < 1000)
+      then go (iter + 1, x*x - y*y + x0, 2.0*x*y + y0)
+      else iter
   in
-    adds (muls (divs (x0, width), (right - left)), left)
+    go (0, 0.0, 0.0)
   end
 
-fun scaleY (y: real) = scale (bottom, top, height) y
+val zero = broadcast 0.0
+val one = broadcast 1.0
+val two = broadcast 2.0
+val four = broadcast 4.0
 
 (* 4 at a time *)
-fun mandelbrot_simd (py: real, px4: real): m256d =
+fun mandelbrot_simd (y' : real, x4': m256d): m256d =
   let
-    val one = broadcast 1.0
-    val zero = broadcast 0.0
-    val x0 = scaleX px4
-    val y0 = scaleY py
+    val y'' = broadcast y'
     fun go (iter, mask, iters, x, y) =
       if (any mask andalso iter < 1000)
       then
         let
           val x2 = mul (x, x)
           val y2 = mul (y, y)
-          val newX = add ((sub (x2, y2)), x0)
-          val newY = adds (muls (mul (x,y), 2.0), y0)
+          val newX = add ((sub (x2, y2)), x4')
+          val newY = add (mul (mul (x,y), two), y'')
 
           val cmp = add (x2, y2)
-          val newMask = lts (cmp, 4.0)
+          val newMask = lt (cmp, four)
+          val newIters = blend (iters, add (iters, one), mask)
+          val newX = blend (blah, newX, mask)
+          val newY = blend (y, newY, mask)
         in
-          go ((iter + 1), newMask, (blend (iters, add (iters, one), mask)), (blend
-          (x, newX, mask)), (blend (y, newY, mask)))
+          go ((iter + 1), newMask, newIters, newX, newY)
         end
       else iters
   in
-    go (0, (le (zero, zero)), zero, zero, zero)
+    go (0, true_ (), zero, zero, zero)
   end
 
 in
 val _ =
   let
-    val res = printM256d (mandelbrot_simd (20.0, 70.0))
+    val start1 = timestamp ()
+    val _ = mandelbrot_simd (~0.6, mk (~0.4, ~0.39, ~0.38, ~0.37))
+    val _ = printReal (timestamp () - start1)
+
+    val start2 = timestamp ()
+    val _ = mandelbrot (~0.6, ~0.4)
+    val _ = mandelbrot (~0.6, ~0.39)
+    val _ = mandelbrot (~0.6, ~0.38)
+    val _ = mandelbrot (~0.6, ~0.37)
+    val _ = printReal (timestamp () - start2)
   in
     ()
   end

@@ -1,18 +1,8 @@
 val width: int = 100
 val height: int = 250
 
-structure Real4 = Tup4(
-  struct
-    type t = real
-    fun add (x, y) = (x + y): real
-    fun sub (x, y) = (x - y): real
-    fun mul (x, y) = (x * y): real
-    fun divi (x, y) = (x / y): real
+functor Mandelbrot(Real4 : REAL4) = struct
 
-    fun eq (x, y) = Real.compare (x, y) = EQUAL
-    fun lt (x, y) = Real.compare (x, y) = LESS
-    fun ge (x, y) = Real.compare (x, y) = GREATER
-  end)
 
 val imageWidth = Real.fromInt (width * Real4.size)
 
@@ -38,8 +28,8 @@ fun scaleX (x: int): Real4.simd =
 
 val scaleY = scale (bottom, top, Real.fromInt height)
 
-val zero = Real4.mk (0.0, 0.0, 0.0, 0.0)
-val one = Real4.mk (1.0, 1.0, 1.0, 1.0)
+fun zero () = Real4.broadcast 0.0
+fun one () = Real4.broadcast 1.0
 
 
 (* 4 at a time *)
@@ -47,7 +37,7 @@ fun mandelbrot (py: int, px4: int): Real4.simd =
   let
     val x0 = scaleX px4
     val y0 = scaleY py
-    fun go iter mask iters x y =
+    fun go (iter, mask, iters, x, y) =
       if (Real4.any mask andalso iter < 1000)
       then
         let
@@ -59,11 +49,11 @@ fun mandelbrot (py: int, px4: int): Real4.simd =
           val cmp = Real4.add (x2, y2)
           val newMask = Real4.lts (cmp, 4.0)
         in
-          go (iter + 1) newMask (Real4.blend (iters, Real4.add (iters, one), mask)) (Real4.blend (x, newX, mask)) (Real4.blend (y, newY, mask))
+          go (iter + 1, newMask, Real4.blend (iters, Real4.add (iters, one ()), mask), Real4.blend (x, newX, mask), Real4.blend (y, newY, mask))
         end
       else iters
   in
-    go 0 (Real4.true_) zero zero zero
+    go (0, Real4.true_, zero (), zero (), zero ())
   end
 
 fun showSimd (x: Real4.simd) =
@@ -73,15 +63,19 @@ fun showSimd (x: Real4.simd) =
      (Int.toString (Real.floor c)) ^ " " ^ (Int.toString (Real.floor d))
   end
 
-val set: Real4.simd Array2.array = Array2.tabulate Array2.RowMajor (height, width, mandelbrot)
+end
+
+structure AVXMandel = Mandelbrot(M256d)
+
+val set: M256d.simd Array2.array = Array2.tabulate Array2.RowMajor (height, width, AVXMandel.mandelbrot)
 
 val _ =
   let
     val _ = print "P2\n"
-    val _ = print ((Int.toString (width * Real4.size)) ^ " " ^ (Int.toString height) ^ "\n")
+    val _ = print ((Int.toString (width * M256d.size)) ^ " " ^ (Int.toString height) ^ "\n")
     val _ = print "1000\n"
     val _ = Array2.appi Array2.RowMajor
-                       (fn (y, x, res) => print ((showSimd res) ^ (if x = width - 1 then "\n" else " ")))
+                       (fn (y, x, res) => print ((AVXMandel.showSimd res) ^ (if x = width - 1 then "\n" else " ")))
                        { base = set, row = 0, col = 0, nrows = NONE, ncols = NONE }
   in
     ()
