@@ -11,10 +11,11 @@
 \author{Christian Kjær Larsen}
 
 
-
 \begin{document}
 
 \maketitle
+
+\tableofcontents
 
 \section{Introduction}
 
@@ -74,7 +75,19 @@ for reducing a 4 element vector. The AVX2 instruction set has no direct support,
 
 Since we in this project only focus on MLKits 64 bit intel backend, we restrict ourselves to vectors of reals (64 bit floats) of 4 elements. This is supported by AVX2 which is widely supported now. We will of course keep in mind to design our library such that it is not too tied to AVX2.
 
-\section{Design}
+\section{Design of a vector signature}
+
+Aritmetic instructions, conditionals, reductions, loads and stores.
+Boolean operations
+
+Arithmetic: plus, minus, multiply, divide, min, max
+Boolean ops on masks: and, or, not, etc.
+
+Reductions for masks: all, any
+Reductions for vectors: sum, product, min, max
+
+construct and destruct vectors into SML values
+Loads and stores into unboxed arrays
 
 
 \subsection{Generic interface}
@@ -87,6 +100,7 @@ SML is pretty simple, parameterizing modules too much makes the library hard to 
 
 \begin{lstlisting}[frame=single]
 signature REAL4 = sig
+
   type element = real
   type interface = real * real * real * real
 
@@ -106,9 +120,11 @@ signature REAL4 = sig
   val lts : simd * element -> mask
   (* and so on *)
 
-  (* predicates *)
+  (* reductions *)
   val all : mask -> boolean
   val any : mask -> boolean
+  val sum : simd -> element
+  val product : simd -> element
 
   (* conditional operations *)
   val blend : simd * simd * mask -> simd
@@ -128,13 +144,11 @@ Mask type with all and any
 
 Blend that 
 
-\subsubsection{Handling arrays of odd length}
+\subsection{Pure SML structure}
 
+Using tuples blah blah blah
 
-Basically a fast map on arrays with a mask at the end.
-Tabulate would be nice.
-
-Have like a RealTable but with SIMD operations. Odd lengths would be handled by blend.
+\subsection{Writing programs}
 
 \subsubsection{Vectorizing mandelbrot}
 
@@ -156,12 +170,10 @@ The way to approach it is to consider 4 pixels $(x_1, y), \ldots, (x_4, y)$. The
 
 We keep a mask $(\texttt{true}, \texttt{true}, \texttt{true}, \texttt{true})$ to signal whether a single pixel converged. We keep updating the iteration count while the corresponding element in the mask is \texttt{true}. We keep iterating as long as any make element is true or at some limit like the original algorithm.
 
-We can 
-
 \begin{lstlisting}
-functor Mandelbrot(Vec: SIMD4) = struct
-  val zero = Vec.mk (0.0, 0.0, 0.0, 0.0)
-  val one = Vec.mk (1.0, 1.0, 1.0, 1.0)
+functor Mandelbrot(Vec: REAL4) = struct
+  val zero = Vec.broadcast 0.0
+  val one = Vec.broadcast 1.0
 
   fun mandelbrot (x0: Vec.simd, y0: real): Vec.simd =
     let
@@ -175,7 +187,7 @@ functor Mandelbrot(Vec: SIMD4) = struct
 
             val newMask = Vec.lts (Vec.add(x2, y2), 4.0)
 
-            val updated = Vec.blend (iters, Vec.add (iters, one), mask)
+            val updated = Vec.blend (iters, Vec.adds (iters, 1.0), mask)
             val newX = Vec.blend (x, computeX, mask)
             val newY = Vec.blend (x, computeY, mask)
           in
@@ -190,7 +202,7 @@ end
 
 We use the \verb!blend! function to conditionally update element only when the if-condition in the original program would have been true. It is not super high level, so it feels a bit like manually programming with low level vectors, but that is the point. We can use the module to optimize library functions for efficiency.
 
-\subsection{Implementation in the MLKit}
+\section{AVX2 implementation in the MLKit}
 
 Boxed representation that is available to the programmer and an internal unboxed type that is available to the optimizer.
 
@@ -267,7 +279,7 @@ and
     unbox (box\ x) \equiv x
 \]
 
-\subsection{Data-parallel programming}
+\section{Data-parallel programming}
 
 Using the unboxed real array from MLKit, we implement vectorized traversals.
 
@@ -470,6 +482,8 @@ fun foo (x: m256d) =
 \end{lstlisting}
 
 \texttt{foo} will have an unbox for each occurence of \texttt{x} in arithmetic operations. It would be better to make \texttt{val x' = unbox x} available in the scope, and then replace occurences of \texttt{unbox x} with \texttt{x'} when the boxed versions are expanded. This will require a bit more complicated analysis of the program. It might be combined with common subexpression elimination.
+
+The optimizer cannot really recognize the boxed vectors, since they just are represented using a string type. Therefore there are cases where spurious unboxes are put in the program. It is also possible to use string operations directly on a boxed vector, which is not disirable.
 
 \section{Conclusion}
 

@@ -1,19 +1,18 @@
 open M256d
 
-fun bench_blend size =
+fun bench_blend size reps =
     let 
         (* Simple arithmetic *)
-        val t = RealTable.tabulate (size, (fn x => Real.fromInt x))
-        val () = bench("Scalar branch", fn () =>
+        fun init () = RealTable.tabulate (size, Real.fromInt)
+
+        val () = bench("Scalar branch", reps, init, fn t =>
           RealTable.modify (fn x => if x > 8.0 then x else x * x) t)
 
-        val t = RealTable.tabulate (size, (fn x => Real.fromInt x))
-        val () = bench("SIMD blend 1", fn () =>
+        val () = bench("SIMD blend 1", reps, init, fn t =>
           RealTable.modify_simd (fn x => blend (mul (x, x), x, gts (x, 8.0))) t)
 
         val eight = broadcast 8.0
-        val t = RealTable.tabulate (size, (fn x => Real.fromInt x))
-        val () = bench("SIMD blend 2", fn () =>
+        val () = bench("SIMD blend 2", reps, init, fn t =>
           RealTable.modify_simd (fn x => blend (mul (x, x), x, gt (x, eight))) t)
     in
       ()
@@ -21,6 +20,6 @@ fun bench_blend size =
 
 fun run i =
   (print ("\n" ^ Int.toString i ^ " elements\n");
-  bench_blend i)
+  bench_blend i 4)
 
 val _ = List.app run [10000, 100000, 1000000, 10000000, 100000000]
