@@ -19,6 +19,7 @@ fun gt (a: simd, b: simd): mask = prim("__m256d_greater", (a,b))
 fun ge (a: simd, b: simd): mask = prim("__m256d_greatereq", (a,b))
 
 
+
 fun all (a: mask): bool = prim("__m256d_all", a)
 fun any (a: mask): bool = prim("__m256d_any", a)
 

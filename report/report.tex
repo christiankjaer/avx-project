@@ -55,6 +55,8 @@ Intrinsic functions for C/C++ guaranteeing what code is generated when the funct
 Standard interface to generic functions that are lowered directly to LLVM and compiled for specific architectures there.
 \url{https://github.com/rust-lang/stdsimd}
 
+Supposed to be portable, so you can write a function that works for vectors of, say, 4 64-bit floats, and then it would be lowered to the LLVM type \verb!<4 x double>!. The problem of choosing good instruction for certain operations are then delegated to the LLVM backend.
+
 \subsubsection{.NET and Java}
 
 \url{https://docs.microsoft.com/en-us/dotnet/api/system.numerics.vector?view=net-5.0}
@@ -62,19 +64,29 @@ Standard interface to generic functions that are lowered directly to LLVM and co
 
 \subsubsection{Challenges}
 
-Do not tie the implementations to tightly to the specific instruction set. It should be fairly easy to change a program from say AVX2 to Neon.
+One major challenge is not to tie the implementations to tightly to the specific instruction set. It should be fairly easy to change a program from say AVX2 to Neon. This then gives the problem of instruction selection. Do you expose direct versions of the AVX2 instructions, and then make other instruction sets emulate those, or do you try to find a common ground, that makes useful operations with good performance available on all CPUs.
+
+Take for instance a horizontal add,
+\[
+    \mathtt{hadd}\ [a_1, \ldots, a_4] = a_1 + \cdots + a_4
+\]
+for reducing a 4 element vector. The AVX2 instruction set has no direct support, and the most efficient implementation might depend on vector sizes and element types. The proposed RISC-V vector extensions directly expose a \texttt{vfredsum.vs} that directly reduces a vector.
+
+Since we in this project only focus on MLKits 64 bit intel backend, we restrict ourselves to vectors of reals (64 bit floats) of 4 elements. This is supported by AVX2 which is widely supported now. We will of course keep in mind to design our library such that it is not too tied to AVX2.
 
 \section{Design}
-
-MLKit has a 64 bit intel backend, and and we restrict ourselves to vectors of reals (64 bit floats) of 4 elements. This is supported by AVX2 which is widely supported now.
-
-\section{Implementation}
 
 
 \subsection{Generic interface}
 
+SML is pretty simple, parameterizing modules too much makes the library hard to use.
+
+\texttt{INT4} for 4 integers (we will not work with this for now)
+
+\texttt{REAL4} for 4 reals.
+
 \begin{lstlisting}[frame=single]
-signature SIMD4 = sig
+signature REAL4 = sig
   type element = real
   type interface = real * real * real * real
 
@@ -102,7 +114,6 @@ signature SIMD4 = sig
   val blend : simd * simd * mask -> simd
 end
 \end{lstlisting}
-
 
 \subsubsection{Arithmetic}
 

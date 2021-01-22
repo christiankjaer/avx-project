@@ -29,6 +29,9 @@ fun lt (a: m256d, b: m256d): m256d = prim("__m256d_less", (a, b))
 fun all (a: mask): bool = prim("__m256d_all", a)
 fun blend (a: m256d, b: m256d, m: mask): m256d = prim("__m256d_blend", (a,b,m))
 
+fun product (a: m256d): real = prim("__m256d_product", a)
+fun sum (a: m256d): real = prim("__m256d_sum", a)
+
 fun index (v: m256d, i: int): real = prim("__blockf64_sub_real", (v, i))
 fun read (v: m256d): real * real * real * real =
   (index (v,0), index (v,1), index (v,2), index (v,3))
@@ -245,6 +248,27 @@ fun mapi (f : int * elem -> elem) (a : B.t) : B.t =
 end
 in
 
+fun bench_sum size =
+  let
+        val t1 = RealTable.tabulate (size, (fn x => intToReal x))
+        val start1 = timestamp ()
+        val x = RealTable.foldri (fn (_, x, y) => y + x) 0.0 t1
+        val _ = printReal (timestamp () - start1)
+        val _ = printReal x
+
+        val t2 = RealTable.tabulate (size, (fn x => intToReal x))
+        val start2 = timestamp ()
+        val y = RealTable.foldri_simd (fn (_, x, y) => (sum x) + y) 0.0 t2
+        val _ = printReal (timestamp () - start2)
+        val _ = printReal y
+
+        val t3 = RealTable.tabulate (size, (fn x => intToReal x))
+        val start2 = timestamp ()
+        val y = RealTable.foldri_simd (fn (_, x, y) => add (y, x)) (broadcast 0.0) t3
+        val _ = printReal (timestamp () - start2)
+        val _ = printReal (sum y)
+  in () end
+
 fun bench_reduction size =
   let
         val t1 = RealTable.tabulate (size, (fn x => intToReal x))
@@ -300,7 +324,7 @@ fun bench_branch size =
 
 val _ =
   let
-    val _ = bench_reduction (4096 * 4096)
+    val _ = bench_simple (4096*8192)
   in ()
   end
 
