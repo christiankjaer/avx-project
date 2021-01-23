@@ -49,6 +49,8 @@ Neon on ARM processors.
 
 \subsubsection{Intrinsics}
 
+The primary way that people program with vector instructions is by using intrinsics.
+
 Intrinsic functions for C/C++ guaranteeing what code is generated when the functions are called.
 
 \subsubsection{Rust}
@@ -146,9 +148,28 @@ Blend that
 
 \subsection{Pure SML structure}
 
-Using tuples blah blah blah
+It is pretty easy to implement a pure SML structure that we can use to test our hardware accelerated version against. We just use tuples of reals for vectors and tuples of booleans for masks.
+\begin{lstlisting}[frame=single]
+structure Tup4 : REAL4 = struct
+  type simd = real * real * real * real
+  type mask = bool * bool * bool * bool
+
+  fun mk a = a
+  fun read a = a
+
+  fun all (m1, m2, m3, m4) = m1 andalso m2 andalso m3 andalso m4
+
+  (* And so on *)
+end
+\end{lstlisting}
 
 \subsection{Writing programs}
+
+Numeric programs.
+
+Branches (always compute both, and then select based on mask)
+
+Reductions to booleans and scalars.
 
 \subsubsection{Vectorizing mandelbrot}
 
@@ -173,7 +194,6 @@ We keep a mask $(\texttt{true}, \texttt{true}, \texttt{true}, \texttt{true})$ to
 \begin{lstlisting}
 functor Mandelbrot(Vec: REAL4) = struct
   val zero = Vec.broadcast 0.0
-  val one = Vec.broadcast 1.0
 
   fun mandelbrot (x0: Vec.simd, y0: real): Vec.simd =
     let
@@ -204,7 +224,48 @@ We use the \verb!blend! function to conditionally update element only when the i
 
 \section{AVX2 implementation in the MLKit}
 
-Boxed representation that is available to the programmer and an internal unboxed type that is available to the optimizer.
+1. add a bunch of primops
+
+We steal the intel terminology that m256d is a 256 bit vector of double precision floating point.
+
+2. add unboxed internal representation and make operations for boxing and unboxing. Change the backend to use vector registers for some operations.
+
+f256 for the unboxed type.
+
+3. make the optimizer rewrite boxed operations $f_{\mathrm{boxed}}\ x$ to unboxed
+\[
+    \mathtt{box}\ (f_{\mathrm{unboxed}} (\mathtt{unbox}\ x))
+\]
+
+Then we only have to implement support for unboxed operations
+
+4. Select instructions to implement the unboxed primops.
+
+Some are straight forward, some require a sequence of operations. Simple arithmetic vs. reductions.
+
+Also aligned vs. unaligned access.
+
+5. Optimize the intermediate code to get rid of unnessecary boxing operations.
+
+6. Implement the REAL4 signature using the primops.
+
+Pretty straight forward. We have primops for all the things.
+\begin{lstlisting}[frame=single]
+structure M256d :> REAL4 = struct
+  type m256d = string
+  type simd = m256d
+  type mask = m256d
+  type interface = real * real * real * real
+
+  fun mk (v: interface): m256d = prim("__blockf64", v)
+
+  fun broadcast (v: real): m256d = prim("__m256d_broadcast", v)
+  fun add (a: m256d, b: m256d): m256d = prim("__m256d_plus", (a,b))
+  fun adds (a: m256d, b: real): m256d = add(a, broadcast b)
+
+  (* And so on *)
+ end
+\end{lstlisting}
 
 \subsection{Data types}
 
@@ -378,7 +439,7 @@ This generates the following code
 
 Again fully unboxed.
 
-\subsection{Evaluation}
+\subsection{Benchmarks}
 
 In this section we will benchmark small example programs and try to explain why they are fast, or why in some cases they are slower than expected.
 

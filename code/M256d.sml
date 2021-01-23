@@ -1,4 +1,4 @@
-structure M256d : REAL4 = struct
+structure M256d :> REAL4 = struct
 
   val size: int = 4
 
