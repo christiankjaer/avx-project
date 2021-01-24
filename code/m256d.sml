@@ -43,6 +43,10 @@ structure M256d :> REAL4 = struct
 
   fun blend (a: simd, b: simd, m: mask): simd = prim("__m256d_blend", (a,b,m))
 
+  fun and_ (a: mask, b: mask): mask = prim("__m256d_and", (a,b))
+  fun or_ (a: mask, b: mask): mask = prim("__m256d_or", (a,b))
+  fun not_ (a: mask): mask = prim("__m256d_not", a)
+
   fun all (a: mask): bool = prim("__m256d_all", a)
   fun any (a: mask): bool = prim("__m256d_any", a)
 

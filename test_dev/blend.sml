@@ -1,4 +1,4 @@
-
+local
 type m256d = string
 
 val size = 4
@@ -45,5 +45,6 @@ let
 in 
   printM256d res
 end
-
+in
 val _ = f ()
+end

@@ -1,8 +1,6 @@
 local
 type m256d = string
 
-val size = 4
-
 type element = real
 type interface = real * real * real * real
 type simd = m256d
@@ -13,7 +11,7 @@ fun mk (a: real, b: real, c: real, d: real): m256d = prim("__blockf64", (a,b,c,d
 fun index (v: m256d, i: int): real = prim("__blockf64_sub_real", (v, i))
 
 fun read (v: m256d): real * real * real * real =
-  (index (v,1), index (v,2), index (v,3), index (v,4))
+  (index (v,0), index (v,1), index (v,2), index (v,3))
 
 fun broadcast (a: real): m256d = prim("__m256d_broadcast", a)
 
@@ -26,15 +24,11 @@ fun muls (a: m256d, b: real): m256d = mul(a, broadcast(b))
 fun sub (a: m256d, b: m256d): m256d = prim("__m256d_minus", (a, b))
 fun subs (a: m256d, b: real): m256d = sub(a, broadcast(b))
 
-fun lt (a: simd, b: simd): mask = prim("__m256d_less", (a,b))
-fun le (a: simd, b: simd): mask = prim("__m256d_lesseq", (a,b))
-fun gt (a: simd, b: simd): mask = prim("__m256d_greater", (a,b))
-fun ge (a: simd, b: simd): mask = prim("__m256d_greatereq", (a,b))
-
-fun blend (a: simd, b: simd, m: mask): simd = prim("__m256d_blend", (a,b,m))
-
-fun all (a: mask): bool = prim("__m256d_all", a)
-fun any (a: mask): bool = prim("__m256d_any", a)
+fun true_ (): mask = prim("__m256d_true", ())
+fun false_ (): mask = prim("__m256d_false", ())
+fun mask_and (a: mask, b: mask): mask = prim("__m256d_and", (a, b))
+fun mask_or (a: mask, b: mask): mask = prim("__m256d_or", (a, b))
+fun mask_not (a: mask): mask = prim("__m256d_not", a)
 
 fun printReal (n:real): unit = prim("printReal",n)
 
@@ -46,14 +40,7 @@ let
   val x4 = index(x, 3)
 in printReal(x1); printReal(x2); printReal(x3); printReal(x4)
 end
-
-fun g () =
-  let
-    fun loop (acc: m256d): m256d =
-      if (all (le (acc, broadcast 0.0))) then acc else loop (subs (acc, 1.0))
-  in
-    loop (broadcast 100.0)
-  end
 in
-val _ = printM256d (g ())
+
+val _ = printM256d (mask_or (true_ (), false_ ()))
 end

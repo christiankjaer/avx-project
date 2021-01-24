@@ -3,6 +3,7 @@
 \usepackage[T1]{fontenc}
 \usepackage{hyperref}
 \usepackage{listings}
+\usepackage{graphicx}
 
 \lstset{language=ML}
 \lstset{basicstyle=\footnotesize\ttfamily,breaklines=true}
@@ -40,6 +41,10 @@ The goal of this project is to add packed vector support to the MLKit\cite{mlkit
 \section{Background}
 
 \subsection{Vector instructions in modern CPUs}
+
+Single instruction stream, but it works on multiple independent pieces of data.
+
+Fewer data dependencies and fewer instructions to be decoded.
 
 MMX, SSE and AVX in Intel processors.
 
@@ -121,6 +126,11 @@ signature REAL4 = sig
   val lt : simd * simd -> mask
   val lts : simd * element -> mask
   (* and so on *)
+
+  (* operations on masks *)
+  val and_ : mask * mask -> mask
+  val or_ : mask * mask -> mask
+  val not_ : mask -> mask
 
   (* reductions *)
   val all : mask -> boolean
@@ -224,13 +234,17 @@ We use the \verb!blend! function to conditionally update element only when the i
 
 \section{AVX2 implementation in the MLKit}
 
-1. add a bunch of primops
+\subsection{Primop definition}
 
 We steal the intel terminology that m256d is a 256 bit vector of double precision floating point.
+
+\subsection{Internal representation}
 
 2. add unboxed internal representation and make operations for boxing and unboxing. Change the backend to use vector registers for some operations.
 
 f256 for the unboxed type.
+
+\subsection{Implementing boxed operations}
 
 3. make the optimizer rewrite boxed operations $f_{\mathrm{boxed}}\ x$ to unboxed
 \[
@@ -239,13 +253,32 @@ f256 for the unboxed type.
 
 Then we only have to implement support for unboxed operations
 
+\subsection{Instruction selection}
+
 4. Select instructions to implement the unboxed primops.
 
 Some are straight forward, some require a sequence of operations. Simple arithmetic vs. reductions.
 
-Also aligned vs. unaligned access.
+On figure XXX we have sketched out our implementation of a horizontal sum of a vector register.
 
+Assume that the argument is in register \verb!ymm0!, then the following instruction sequence will place the sum of all elements in the bottom of register \verb!xmm1!:
+
+\begin{verbatim}
+vextractf128 0x1, %ymm0, %xmm1
+vaddpd %xmm0, %xmm1, %xmm0
+vunpckhpd %xmm1, %xmm1, %xmm0
+vaddsd %xmm1, %xmm0, %xmm1
+\end{verbatim}
+
+\includegraphics[width=\textwidth]{sum.png}
+
+
+Since we did not want to modify the memory allocation in MLKit too much, we have made the decision to rely on the unaligned memory operations that are possible in AVX2. They might be a little slower than making sure that all accesses are properly aligned.
+
+\subsection{Unboxing}
 5. Optimize the intermediate code to get rid of unnessecary boxing operations.
+
+\subsection{Signature using primops}
 
 6. Implement the REAL4 signature using the primops.
 
@@ -376,28 +409,6 @@ in
 end
 \end{lstlisting}
 The core of the generated assembly code is the following
-\begin{verbatim}
-vmulpd %ymm10,%ymm10,%ymm12
-movq $DLab.FloatLab51747simd.auto.mlbsimd.sml1,%r10
-movsd (%r10),%xmm8
-vbroadcastsd %xmm8,%ymm8
-vaddpd %ymm8,%ymm12,%ymm8
-vsubpd %ymm10,%ymm8,%ymm4
-xorps %xmm8,%xmm8
-movq $DLab.FloatLab50746simd.auto.mlbsimd.sml1,%r10
-movsd (%r10),%xmm10
-movq $DLab.FloatLab49745simd.auto.mlbsimd.sml1,%r10
-movsd (%r10),%xmm12
-movq $DLab.FloatLab48744simd.auto.mlbsimd.sml1,%r10
-movsd (%r10),%xmm2
-leaq 16(%rsp),%rsi
-movsd %xmm8,8(%rsi)
-movsd %xmm10,16(%rsi)
-movsd %xmm12,24(%rsi)
-movsd %xmm2,32(%rsi)
-vmovupd 8(%rsi),%ymm8
-vaddpd %ymm8,%ymm4,%ymm8
-\end{verbatim}
 Disregarding the loading of vector literals, the resulting code is fully unboxed and just has a series of vector instructions.
 
 For branching we want to print 1.0 if any of the elements of \verb!x! are greater than their corresponding element in \verb!y! and 0.0 otherwise.
@@ -545,6 +556,8 @@ fun foo (x: m256d) =
 \texttt{foo} will have an unbox for each occurence of \texttt{x} in arithmetic operations. It would be better to make \texttt{val x' = unbox x} available in the scope, and then replace occurences of \texttt{unbox x} with \texttt{x'} when the boxed versions are expanded. This will require a bit more complicated analysis of the program. It might be combined with common subexpression elimination.
 
 The optimizer cannot really recognize the boxed vectors, since they just are represented using a string type. Therefore there are cases where spurious unboxes are put in the program. It is also possible to use string operations directly on a boxed vector, which is not disirable.
+
+If the last operation is a box, then the instruction should write directly to memory instead of doing a move. Peephole optimization.
 
 \section{Conclusion}
 

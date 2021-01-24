@@ -1,17 +1,7 @@
 functor SimdTest(Vec: REAL4) =
 struct
 
-  fun printVec (x: Vec.simd) =
-  let
-    val (a,b,c,d): real * real * real * real = Vec.read x
-    val str =
-      "(" ^ Real.toString a  ^ ", "
-          ^ Real.toString b  ^ ", "
-          ^ Real.toString c  ^ ", "
-          ^ Real.toString d  ^ ")\n"
-  in
-    print str
-  end
+  structure Utils = VectorUtils(Vec)
 
   fun g (x: Vec.simd) = Vec.add(x, Vec.mk (0.0, 1.0, 2.0, 3.0))
 
@@ -23,7 +13,7 @@ struct
     val d: Vec.simd = Vec.sub (c, a)
     val e: Vec.simd = g d
   in 
-    printVec e;
+    print (Utils.toString e ^ "\n");
     print ((Real.toString (Vec.sum e)) ^ "\n")
   end
 end

@@ -1,6 +1,6 @@
 $(SML_LIB)/basis/basis.mlb
 ../REAL4.sig
-../M256d.sml
+../m256d.sml
 ../simd_table.sml
 bench.sml
 update.sml

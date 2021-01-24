@@ -46,6 +46,27 @@ structure Tup4 : REAL4 = struct
     , if m4 then b4 else a4
     )
 
+  fun and_ ((m1, m2, m3, m4), (n1, n2, n3, n4)) =
+    ( m1 andalso n1
+    , m2 andalso n2
+    , m3 andalso n3
+    , m4 andalso n4
+    )
+
+  fun or_ ((m1, m2, m3, m4), (n1, n2, n3, n4)) =
+    ( m1 orelse n1
+    , m2 orelse n2
+    , m3 orelse n3
+    , m4 orelse n4
+    )
+
+  fun not_ (m1, m2, m3, m4) =
+    ( not m1
+    , not m2
+    , not m3
+    , not m4
+    )
+
   fun all (m1, m2, m3, m4) = m1 andalso m2 andalso m3 andalso m4
   fun any (m1, m2, m3, m4) = m1 orelse m2 orelse m3 orelse m4
 

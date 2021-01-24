@@ -37,6 +37,10 @@ signature REAL4 = sig
   val ge : simd * simd -> mask
   val ges : simd * element -> mask
 
+  val and_ : mask * mask -> mask
+  val or_ : mask * mask -> mask
+  val not_ : mask -> mask
+
   val all : mask -> bool
   val any : mask -> bool
 

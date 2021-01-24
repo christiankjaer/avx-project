@@ -1,5 +1,6 @@
 $(SML_LIB)/basis/basis.mlb
 REAL4.sig
-M256d.sml
+m256d.sml
+vector_utils.sml
 tup4.sml
 test.sml
