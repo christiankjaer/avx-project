@@ -84,28 +84,13 @@ Since we in this project only focus on MLKits 64 bit intel backend, we restrict 
 
 \section{Design of a vector signature}
 
-Aritmetic instructions, conditionals, reductions, loads and stores.
-Boolean operations
-
-Arithmetic: plus, minus, multiply, divide, min, max
-Boolean ops on masks: and, or, not, etc.
-
-Reductions for masks: all, any
-Reductions for vectors: sum, product, min, max
-
-construct and destruct vectors into SML values
-Loads and stores into unboxed arrays
-
+In this section we will briefly describe a vector signature that can be used for SIMD programming in SML. We will also show how to write simple programs that use it.
 
 \subsection{Generic interface}
 
-SML is pretty simple, parameterizing modules too much makes the library hard to use.
+We have created a \verb!REAL4! signature that will operate on a packed vector of 4 \verb!real!s. An overview can be seen on listing~\ref{lst:real4}.
 
-\texttt{INT4} for 4 integers (we will not work with this for now)
-
-\texttt{REAL4} for 4 reals.
-
-\begin{lstlisting}[frame=single]
+\begin{lstlisting}[frame=single, caption=\texttt{REAL4} vector signature, label={lst:real4}]
 signature REAL4 = sig
 
   type element = real
@@ -116,6 +101,8 @@ signature REAL4 = sig
 
   val mk : interface -> simd
   val read : simd -> interface
+
+  val broadcast : element -> simd
 
   (* arithmetic operations (vectors and scalars) *)
   val add : simd * simd -> simd
@@ -143,23 +130,19 @@ signature REAL4 = sig
 end
 \end{lstlisting}
 
-\subsubsection{Arithmetic}
+There are two opaque types. \verb!simd! represents the actual vector and \verb!mask! represents a vector of booleans that can be the result of comparisons. We have chosen to fix the number of elements in the signature, since this makes the signature much easier to use. An alternative would be to make the \verb!mk! and \verb!read! functions work on lists, and then we could reuse the signature to work on multiple vector lengths. This of course makes the interface more fragile.
 
-Elementwise operations
-Scalar operations
+We include arithmetic operations both in vector-vector and vector-scalar form. The comparisons will return masks where the individual elements correspond to the comparison between individual elements. We also include common boolean operations on masks.
 
-\subsubsection{Comparisons}
+To collapse vectors into elements, we also include some reductions. Sum and product of vectors will collapse an entire vector into the sum or product of its elements. \verb!all! and \verb!any! will return true if all or any of its elements are true. Other reductions could also be added in the future like minimum and maximum.
 
-Mask type with all and any
 
-\subsubsection{Masks}
-
-Blend that 
+A signature for packed integers \texttt{INT4} could also be added, and an implementation could also be made using AVX2 instructions, but we have chosen to focus on floating point in this project. It would of course include different operations more specific to integers.
 
 \subsection{Pure SML structure}
 
 It is pretty easy to implement a pure SML structure that we can use to test our hardware accelerated version against. We just use tuples of reals for vectors and tuples of booleans for masks.
-\begin{lstlisting}[frame=single]
+\begin{lstlisting}[frame=single, label={lst:tup4}, caption={Implementation of \texttt{REAL4} using tuples}]
 structure Tup4 : REAL4 = struct
   type simd = real * real * real * real
   type mask = bool * bool * bool * bool
@@ -167,6 +150,7 @@ structure Tup4 : REAL4 = struct
   fun mk a = a
   fun read a = a
 
+  fun broadcast v = (v, v, v, v)
   fun all (m1, m2, m3, m4) = m1 andalso m2 andalso m3 andalso m4
 
   (* And so on *)
@@ -175,27 +159,45 @@ end
 
 \subsection{Writing programs}
 
-Numeric programs.
+Writing a simple 
 
-Branches (always compute both, and then select based on mask)
+\begin{lstlisting}[frame=single, label={lst:numeric}, caption={Numeric program}]
+\end{lstlisting}
+We can write programs with conditionals by using the \texttt{blend} operation. It gives us the possibility to select from one of two vectors based on a mask. We can use it to write a vectorized version of a maximum function:
+\begin{lstlisting}[frame=single, label={lst:max}, caption={Max function}]
+fun max (v1: real, v2: real) = if v1 < v2 then v2 else v1
 
-Reductions to booleans and scalars.
+fun max_simd (v1: simd, v2: simd): simd =
+  blend (v1, v2, lt (v1, v2))
+\end{lstlisting}
+The \texttt{blend} will select elements from the first vector when the element in the mask is true, and otherwise take the element from the second vector.
+
+If we want to write a loop that terminates based on some condition about elements of the vector, we can use the boolean reductions to make a predicate about the entire vector.
+We can for instance make a tail recursive function that adds 1.0 to each element until all elements are above 9000.
+\begin{lstlisting}[frame=single, label={lst:max}, caption={Iteration with guard}]
+fun loop (x: simd): simd =
+  if all (gts (x, 9000.0))
+    then x
+    else loop (adds (x, 1.0))
+\end{lstlisting}
+
 
 \subsubsection{Vectorizing mandelbrot}
 
-In the classic mandelbrot algorithm, a single pixel is calculated by applying a function to a coordinate until divergence.
-
+Using these building blocks, we can try to rewrite a larger program to use the vecorized operation. We will take a look at a simple implementation of a function that calculates whether a complex number belongs to the Mandelbrot set.
 \begin{lstlisting}
-fun mandelbrot (x0: real, y0: real): int =
+fun mandelbrot (re: real, im: real): int =
   let
     fun go iter x y =
-      if (x*x + y*y <= 4.0 andalso iter < 1000)
-      then go (iter + 1) (x*x - y*y + x0) (2.0*x*y + y0)
+      if (re*re + im*im <= 4.0 andalso iter < 1000)
+      then go (iter + 1) (re*re - im*im + x0) (2.0*re*im + y0)
       else iter
   in
     go 0 0.0 0.0
   end
 \end{lstlisting}
+
+
 
 The way to approach it is to consider 4 pixels $(x_1, y), \ldots, (x_4, y)$. The problem is that for 4 pixels it might be the case that some diverge and some converge. We can use masks to essentially block the updates for pixels that have converged already.
 
@@ -205,15 +207,15 @@ We keep a mask $(\texttt{true}, \texttt{true}, \texttt{true}, \texttt{true})$ to
 functor Mandelbrot(Vec: REAL4) = struct
   val zero = Vec.broadcast 0.0
 
-  fun mandelbrot (x0: Vec.simd, y0: real): Vec.simd =
+  fun mandelbrot (re: Vec.simd, im: real): Vec.simd =
     let
       fun go iter mask x =
         if (Vec.any mask andalso iter < 1000) then
           let
             val x2 = Vec.mul(x, x)
             val y2 = Vec.mul(y, y)
-            val computeX = Vec.add (Vec.sub (x2, y2), x0)
-            val computeY = Vec.adds (Vec.muls (Vec.mul (x, y), 2.0), y0)
+            val computeX = Vec.add (Vec.sub (x2, y2), re)
+            val computeY = Vec.adds (Vec.muls (Vec.mul (x, y), 2.0), im)
 
             val newMask = Vec.lts (Vec.add(x2, y2), 4.0)
 

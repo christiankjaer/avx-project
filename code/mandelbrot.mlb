@@ -1,6 +1,6 @@
 $(SML_LIB)/basis/basis.mlb
 REAL4.sig
-M256d.sml
+m256d.sml
 tup4.sml
 
 mandelbrot_simd.sml
