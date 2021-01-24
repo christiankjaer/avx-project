@@ -17,20 +17,23 @@ fun square (x: Real4.simd): Real4.simd = Real4.mul (x, x)
 (* 4 at a time *)
 fun mandelbrot_simd (re: Real4.simd, im: real): Real4.simd =
   let
+    val one = Real4.broadcast 1.0
+    val four = Real4.broadcast 4.0
+    val two = Real4.broadcast 2.0
     fun go (iter, iters, re', im') =
       let
         val re2 = square re'
         val im2 = square im'
-        val mask = Real4.les (Real4.add (re2, im2), 4.0)
+        val mask = Real4.le (Real4.add (re2, im2), four)
       in
         if (Real4.any mask andalso iter < 1000)
         then
           let 
             val re'' = Real4.add ((Real4.sub (re2, im2)), re)
-            val im'' = Real4.adds (Real4.muls (Real4.mul (re', im'), 2.0), im)
+            val im'' = Real4.adds (Real4.mul (Real4.mul (re', im'), two), im)
           in
             go ( iter + 1
-               , Real4.blend (iters, Real4.adds (iters, 1.0), mask)
+               , Real4.blend (iters, Real4.add (iters, one), mask)
                , Real4.blend (re', re'', mask)
                , Real4.blend (im', im'', mask)
                )
