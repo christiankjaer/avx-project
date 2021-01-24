@@ -240,6 +240,8 @@ Rewriting a program like this is a bit mechanical, and could maybe be done autom
 \section{Implementation in the MLKit}
 In this section we will describe the changes made to the MLKit compiler in order to support the vector operations described in the precious section using AVX2 instructions. The internals of the MLKit is not super documented, so there will be a lot of mentions of concepts in the compiler that has no references, and is simply understood by reading through the codebase.
 
+\subsection{Types}
+
 \subsection{Primops}
 The way that the programmer will have access to native vector instructions is through the \texttt{prim} feature of MLKit. 
 
@@ -284,43 +286,35 @@ Most of these operations correspond directly to the functions in the \texttt{REA
     
 \subsection{Internal representation}
 
-2. add unboxed internal representation and make operations for boxing and unboxing. Change the backend to use vector registers for some operations.
-
-Since Standard ML is polymorphic, there might be polymorphic functions that can receive arguments of any type. This is typically achieved by having a uniform representation of values. Typically a box (pointer to the underlying data). There is a substantial penalty for this, since in order to do operations on the underlying value, there is a level of indirection. For our new vector type we will have to use 16 bytes of memory in addition to the pointer to represent something that typically fits in a register.
-
-Any operation that works on a boxed representation will typically have to unbox the data, do the operation and box the result again. This is very costly on modern hardware.
-
-
 The MLKit has a boxed floating point representation accessible to the programmer as the \verb!real! type in Standard ML. Internally in the optimizer, unnessecary boxing operations are avoided by using unboxed operations directly on floating point registers thereby avoiding expensive memory operations in basic blocks. Due to the uniform memory represenation, these unboxed floats can not be passed to generic functions and should therefore not be exposed to the programmer.
 
-We will do something similar for our vector representation. A boxed representation will be visible to the programmer, but internally a \verb!F256! type will be used to represent a register containing 4 64-bit floating point numbers.
+We will do something similar for our vectors. For the programmer all the vector operations work on strings since we did not extend Standard ML with new types. We add a new internal type, \texttt{F256} to the compiler. This is not visible to the programmer, and is only used when optimizing programs in the same way as the \texttt{F64} type is used for reals. Values of the type \texttt{F256} are stored in \texttt{ymm} registers just like \texttt{F64} values are stored in \texttt{xmm} registers.
 
-f256 for the unboxed type.
+\texttt{ymm} registers completely overlap with \texttt{xmm} registers, which means that we cannot just allocate vector registers independently from regular floating point registers. We have chosen to deal with this in a rather simple way. When using a vector instruction, we just request a regular floating point register, and have the compiler change the register to a \texttt{ymm} register when the instruction is written. This also gives us the flexibility to look at a 4 element vector register as having only one or two elements.
 
 \subsection{Implementing boxed operations}
 
-Take all the operations in table~\ref{tbl:primops} and make unboxed versions that operate on the internal \verb!f256! and \verb!f64! types and the and insert explicit boxing operations around the result, and unboxing operations around the arguments. Roughly speaking we want the following equivalence
+To implement the primops in table~\ref{tbl:primops} we take a pretty simple approach. We make unboxed versions of the primops that work on vector and floating point registers using the \texttt{F64} and \texttt{F256} types. We then insert explicit boxing operations around the result, and explicit unboxing operations around the arguments. In other words we will have the equivalence
 \[
     f_{\mathrm{boxed}} \equiv \mathtt{box}\ (f_{\mathrm{unboxed}} (\mathtt{unbox}\ x))
 \]
 to hold.
 
-Then we only have to implement support for unboxed operations, and the complexity of dealing with memory allocation, loading and storing vector values to memory will be handled in one location.
+Then we only have to implement support for unboxed operations, and the complexity of dealing with memory allocation, loading and storing vector values to memory will be handled in the implementation of the the primops \verb!__f256_box! and \verb!__f256_unbox!.
 
-For boxing we will make two primops \verb!__f256_box! and \verb!__f256_unbox!.
+For instance we will implement \verb!__m256d_broadcast x! by rewriting it to
+\begin{verbatim}
+__f256_box (__f256_broadcast (__f64_unbox x))
+\end{verbatim}
 
-\paragraph{Unboxing}
-The unboxing operation will just load the vector from memory using a \verb!vmovupd! instruction.
-
-\paragraph{Boxing}
-The boxing operation is a bit more complicated. We will not generate code for the boxing operation. What we will do instead is to rewrite the boxing operation to the following code in the last step of the optimizer:
+Also we will not generate code for the boxing operation. What we will do instead is to rewrite the boxing operation to the following code in the last step of the optimizer:
 \begin{lstlisting}
 let
-  val box = alloc_vector ()
-  val ()  = store_vector (value, box)
+  val box = SCRATCHMEM 32
+  val ()  = __f256_store (value, box)
 in box
 \end{lstlisting}
-Where the two \verb!alloc_vector! and \verb!store_vector! will be distinct primops. \verb!alloc_vector! will use the \verb!SCRATCHMEM! primop to get 32 bytes of memory for a box. Then the \verb!store_vector! primop will do a single \verb!vmovupd! to store the content of the vector register in memory.
+Where \verb!SCRATCHMEM 32! is a primop that will allocate 32 bytes of uninitialized memory. Then the \verb!__f256_store! primop will do a single \verb!vmovupd! to store the content of the vector register in memory.
 
 The reason why we have it as two distinct primops is, that we rely on elimination of boxing operations in the compiler to get decent performance. Manipulating intermediate code with explicit boxing operations is much simpler than manipulating stores and allocs as well.
 
@@ -428,7 +422,28 @@ structure M256d :> REAL4 = struct
 
 \section{Data-parallel programming}
 
-Using the unboxed real array from MLKit, we implement vectorized traversals.
+We modify \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}} from the standard library to have support for vectorized traversals. This basically just dropping in our primops for vectorized updates and indexing for unboxed arrays of reals.
+\begin{lstlisting}[frame=single]
+type t = chararray
+fun update_m256d (t: t, i: int, v: simd): unit =
+    prim("__blockf64_update_m256d", (t,i,v))
+
+fun sub_m256d (t: t, i: int): simd =
+    prim("__blockf64_sub_m256d", (t,i))
+\end{lstlisting}
+
+Assuming that we have an array where the length is a multiple of 4, we can for instance implement a vectorized \texttt{map} pretty easily which if we are lucky will be fully unboxed
+\begin{lstlisting}[frame=single]
+fun map_simd (f : simd -> simd) (a : t) : t =
+  let val n = length a
+    val b: t = alloc n
+	fun lr j =
+      if j < n then
+        (update_m256d (b, j, f (sub_m256d (a, j))); lr (j+4))
+      else b
+  in lr 0
+  end
+\end{lstlisting}
 
 \section{Evaluation}
 
@@ -479,27 +494,6 @@ end
 \end{lstlisting}
 
 This generates the following code
-
-\begin{verbatim}
-  # Code to load x into ymm8 y into ymm12 above
-  vcmppd $0xE,%ymm8,%ymm12,%ymm8
-  vmovmskpd %ymm8,%rax
-  cmpq $0x0,%rax
-  movq $1,%rax
-  movq $3,%r10
-  cmovne %r10,%rax
-  cmpq $3,%rax
-  jne .LLab.newSelLab436branch.auto.mlbbranch.sml1
-  movq $DLab.FloatLab32437branch.auto.mlbbranch.sml1,%rdi
-  call printReal
-  jmp .LLab.exitSwitchLab434branch.auto.mlbbranch.sml1
-  .p2align 0x4
-.LLab.newSelLab436branch.auto.mlbbranch.sml1:
-  movq $DLab.FloatLab31435branch.auto.mlbbranch.sml1,%rdi
-  call printReal
-  .p2align 0x4
-.LLab.exitSwitchLab434branch.auto.mlbbranch.sml1:
-\end{verbatim}
 
 Again fully unboxed.
 
