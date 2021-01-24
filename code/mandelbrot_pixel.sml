@@ -10,32 +10,33 @@ fun mandelbrot (re: real, im: real): real =
 
 functor Mandelbrot(Real4 : REAL4) =
 struct
+open Real4
 
-val zero = Real4.broadcast 0.0
-fun square (x: Real4.simd): Real4.simd = Real4.mul (x, x)
+val zero = broadcast 0.0
+fun square (x: simd): simd = mul (x, x)
 
 (* 4 at a time *)
-fun mandelbrot_simd (re: Real4.simd, im: real): Real4.simd =
+fun mandelbrot_simd (re: simd, im: real): simd =
   let
-    val one = Real4.broadcast 1.0
-    val four = Real4.broadcast 4.0
-    val two = Real4.broadcast 2.0
+    val one = broadcast 1.0
+    val four = broadcast 4.0
+    val two = broadcast 2.0
     fun go (iter, iters, re', im') =
       let
         val re2 = square re'
         val im2 = square im'
-        val mask = Real4.le (Real4.add (re2, im2), four)
+        val mask = le (add (re2, im2), four)
       in
-        if (Real4.any mask andalso iter < 1000)
+        if (any mask andalso iter < 1000)
         then
           let 
-            val re'' = Real4.add ((Real4.sub (re2, im2)), re)
-            val im'' = Real4.adds (Real4.mul (Real4.mul (re', im'), two), im)
+            val re'' = add ((sub (re2, im2)), re)
+            val im'' = adds (mul (mul (re', im'), two), im)
           in
             go ( iter + 1
-               , Real4.blend (iters, Real4.add (iters, one), mask)
-               , Real4.blend (re', re'', mask)
-               , Real4.blend (im', im'', mask)
+               , blend (iters, add (iters, one), mask)
+               , blend (re', re'', mask)
+               , blend (im', im'', mask)
                )
           end
       else iters
@@ -46,13 +47,14 @@ fun mandelbrot_simd (re: Real4.simd, im: real): Real4.simd =
 
 end
 
-structure M = Mandelbrot(M256d)
-structure U = VectorUtils(M256d)
+structure V = M256d
+structure M = Mandelbrot(V)
+structure U = VectorUtils(V)
 
 val _ =
   let
     val m = bench("Mandelbrot simd", 100, fn () => (), fn () =>
-    M.mandelbrot_simd (M256d.mk (~0.4, ~0.39, ~0.38, ~0.37), ~0.6))
+    M.mandelbrot_simd (V.mk (~0.4, ~0.39, ~0.38, ~0.37), ~0.6))
 
     val mtup = bench("Mandelbrot simple", 1000, fn () => (), fn () =>
       let 
@@ -63,5 +65,5 @@ val _ =
       in (m1, m2, m3, m4) end)
   in 
     print (U.toString m ^ "\n");
-    print (U.toString (M256d.mk mtup) ^ "\n")
+    print (U.toString (V.mk mtup) ^ "\n")
   end

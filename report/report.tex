@@ -1,9 +1,12 @@
 \documentclass{article}
+\usepackage[a4paper, margin=1.5in]{geometry}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{hyperref}
+\usepackage{palatino}
 \usepackage{listings}
 \usepackage{graphicx}
+\usepackage{booktabs}
 
 \lstset{language=ML}
 \lstset{basicstyle=\footnotesize\ttfamily,breaklines=true}
@@ -159,9 +162,10 @@ end
 
 \subsection{Writing programs}
 
-Writing a simple 
-
+Writing a simple numeric program is very simple, since the \verb!simd! values are almost interchangable with reals.
 \begin{lstlisting}[frame=single, label={lst:numeric}, caption={Numeric program}]
+fun foo (x: real, y: real) = x*x + y*y
+fun foo_simd (x: simd, y: simd) = add (mul (x, x), mul (y, y))
 \end{lstlisting}
 We can write programs with conditionals by using the \texttt{blend} operation. It gives us the possibility to select from one of two vectors based on a mask. We can use it to write a vectorized version of a maximum function:
 \begin{lstlisting}[frame=single, label={lst:max}, caption={Max function}]
@@ -170,7 +174,7 @@ fun max (v1: real, v2: real) = if v1 < v2 then v2 else v1
 fun max_simd (v1: simd, v2: simd): simd =
   blend (v1, v2, lt (v1, v2))
 \end{lstlisting}
-The \texttt{blend} will select elements from the first vector when the element in the mask is true, and otherwise take the element from the second vector.
+\texttt{blend} will select elements from the first vector when the element in the mask is true, and otherwise take the element from the second vector.
 
 If we want to write a loop that terminates based on some condition about elements of the vector, we can use the boolean reductions to make a predicate about the entire vector.
 We can for instance make a tail recursive function that adds 1.0 to each element until all elements are above 9000.
@@ -181,11 +185,10 @@ fun loop (x: simd): simd =
     else loop (adds (x, 1.0))
 \end{lstlisting}
 
-
 \subsubsection{Vectorizing mandelbrot}
 
-Using these building blocks, we can try to rewrite a larger program to use the vecorized operation. We will take a look at a simple implementation of a function that calculates whether a complex number belongs to the Mandelbrot set.
-\begin{lstlisting}
+Using these building blocks, we can try to rewrite a larger program to use the vectorized operations. We will take a look at a simple implementation of a function that calculates whether a complex number belongs to the Mandelbrot set.
+\begin{lstlisting}[frame=single, label={lst:scalar_mandel}, caption={Scalar Mandelbrot}]
 fun mandelbrot (re: real, im: real): int =
   let
     fun go iter x y =
@@ -196,66 +199,139 @@ fun mandelbrot (re: real, im: real): int =
     go 0 0.0 0.0
   end
 \end{lstlisting}
+A way to approach it is to consider 4 values $(x_1, y), \ldots, (x_4, y)$. The problem is that for 4 pixels it might be the case that some diverge and some converge. We can use masks to essentially block the updates for pixels that have converged already.
 
-
-
-The way to approach it is to consider 4 pixels $(x_1, y), \ldots, (x_4, y)$. The problem is that for 4 pixels it might be the case that some diverge and some converge. We can use masks to essentially block the updates for pixels that have converged already.
-
-We keep a mask $(\texttt{true}, \texttt{true}, \texttt{true}, \texttt{true})$ to signal whether a single pixel converged. We keep updating the iteration count while the corresponding element in the mask is \texttt{true}. We keep iterating as long as any make element is true or at some limit like the original algorithm.
-
-\begin{lstlisting}
-functor Mandelbrot(Vec: REAL4) = struct
-  val zero = Vec.broadcast 0.0
-
-  fun mandelbrot (re: Vec.simd, im: real): Vec.simd =
-    let
-      fun go iter mask x =
-        if (Vec.any mask andalso iter < 1000) then
-          let
-            val x2 = Vec.mul(x, x)
-            val y2 = Vec.mul(y, y)
-            val computeX = Vec.add (Vec.sub (x2, y2), re)
-            val computeY = Vec.adds (Vec.muls (Vec.mul (x, y), 2.0), im)
-
-            val newMask = Vec.lts (Vec.add(x2, y2), 4.0)
-
-            val updated = Vec.blend (iters, Vec.adds (iters, 1.0), mask)
-            val newX = Vec.blend (x, computeX, mask)
-            val newY = Vec.blend (x, computeY, mask)
+\begin{lstlisting}[frame=single, label={lst:vector_mandel}, caption={Vector Mandelbrot}]
+functor Mandelbrot(Real4 : REAL4) = struct
+open Real4
+fun mandelbrot_simd (re: simd, im: real): simd =
+  let
+    val zero = broadcast 0.0
+    fun square x = mul (x, x)
+    fun go (iter, iters, re', im') =
+      let
+        val re2 = square re'
+        val im2 = square im'
+        val mask = les (add (re2, im2), 4.0)
+      in
+        if (any mask andalso iter < 1000)
+        then
+          let 
+            val re'' = add (sub (re2, im2), re)
+            val im'' = adds (muls (mul (re', im'), 2.0), im)
           in
-            go (iter + 1) newMask updated newX newY
+            go ( iter + 1
+               , blend (iters, adds (iters, 1.0), mask)
+               , blend (re', re'', mask)
+               , blend (im', im'', mask)
+               )
           end
-        else iters
-    in
-      go 0 Vec.true zero zero zero
+      else iters
     end
+  in
+    go (0, zero, zero, zero)
+  end
 end
 \end{lstlisting}
+We start by computing the mask that corresponds to the condition in the original if-statement. If all values are false, we stop iterating, since all values in the vector has either converged or diverged. We then use the \verb!blend! operation to conditionally update only the iteration count and the temporary values for those elements where the if-condition in the original program would have been true.
 
-We use the \verb!blend! function to conditionally update element only when the if-condition in the original program would have been true. It is not super high level, so it feels a bit like manually programming with low level vectors, but that is the point. We can use the module to optimize library functions for efficiency.
+Rewriting a program like this is a bit mechanical, and could maybe be done automatically for these kinds of functions with some meta-programming.
 
-\section{AVX2 implementation in the MLKit}
+\section{Implementation in the MLKit}
+In this section we will describe the changes made to the MLKit compiler in order to support the vector operations described in the precious section using AVX2 instructions. The internals of the MLKit is not super documented, so there will be a lot of mentions of concepts in the compiler that has no references, and is simply understood by reading through the codebase.
 
-\subsection{Primop definition}
+\subsection{Primops}
+The way that the programmer will have access to native vector instructions is through the \texttt{prim} feature of MLKit. 
 
-We steal the intel terminology that m256d is a 256 bit vector of double precision floating point.
+On table~\ref{tbl:primops} an overview of the added user facing primops can be seen.
 
+\begin{table}
+\begin{tabular}{ l l l }
+    \toprule
+    Category & Primop & Type \\
+    \midrule
+    Artithmetic & \verb!__m256d_plus! & \verb!string * string -> string! \\
+                & \verb!__m256d_minus! & \verb!string * string -> string! \\
+                & etc. & \\
+                \midrule 
+    Logic       & \verb!__m256d_and! & \verb!string * string -> string! \\
+                & \verb!__m256d_not! & \verb!string -> string! \\
+                & etc. & \\
+                \midrule 
+    Conditional & \verb!__m256d_le! & \verb!string * string -> string! \\
+                & \verb!__m256d_blend! & \verb!string * string * string -> string! \\
+                & etc. & \\
+                \midrule 
+    Reductions  & \verb!__m256d_all! & \verb!string -> bool! \\
+                & \verb!__m256d_sum! & \verb!string -> real! \\
+                & etc. & \\
+                \midrule 
+    Load and store & \verb!__m256d_broadcast! & \verb!real -> string! \\
+                   & \verb!__m256d_true! & \verb!unit -> string! \\
+                   & \verb!__blockf64_update_m256d! & \verb!string * int * string -> unit! \\
+                   & \verb!__blockf64_sub_m256d! & \verb!string * int -> string! \\
+                   & etc. & \\
+                   \bottomrule
+\end{tabular}
+\caption{Overview of added primops}
+\label{tbl:primops}
+\end{table}
+
+We steal the naming convention from Intel that \texttt{m256d} is a 256 bit vector of double precision floating point numbers. The user facing type of vectors is \verb!string! which is chosen, since in the compiler it is a type that roughly corresponds to an array of bytes. We can hide this type in a structure which implements the \texttt{REAL4} signature by using opaque signature matching, so that the user does not accidentally concatenate it with another string.
+
+Most of these operations correspond directly to the functions in the \texttt{REAL4} signature. Additionally we have added primops for dealing with unboxed arrays of reals. The \verb!__blockf64_update_m256d! primop will update 4 values at the specified index in a block of memory containing unboxed reals. The \verb!__blockf64_sub_m256d! will get the 4-element vector from the specified index.
+
+    
 \subsection{Internal representation}
 
 2. add unboxed internal representation and make operations for boxing and unboxing. Change the backend to use vector registers for some operations.
+
+Since Standard ML is polymorphic, there might be polymorphic functions that can receive arguments of any type. This is typically achieved by having a uniform representation of values. Typically a box (pointer to the underlying data). There is a substantial penalty for this, since in order to do operations on the underlying value, there is a level of indirection. For our new vector type we will have to use 16 bytes of memory in addition to the pointer to represent something that typically fits in a register.
+
+Any operation that works on a boxed representation will typically have to unbox the data, do the operation and box the result again. This is very costly on modern hardware.
+
+
+The MLKit has a boxed floating point representation accessible to the programmer as the \verb!real! type in Standard ML. Internally in the optimizer, unnessecary boxing operations are avoided by using unboxed operations directly on floating point registers thereby avoiding expensive memory operations in basic blocks. Due to the uniform memory represenation, these unboxed floats can not be passed to generic functions and should therefore not be exposed to the programmer.
+
+We will do something similar for our vector representation. A boxed representation will be visible to the programmer, but internally a \verb!F256! type will be used to represent a register containing 4 64-bit floating point numbers.
 
 f256 for the unboxed type.
 
 \subsection{Implementing boxed operations}
 
-3. make the optimizer rewrite boxed operations $f_{\mathrm{boxed}}\ x$ to unboxed
+Take all the operations in table~\ref{tbl:primops} and make unboxed versions that operate on the internal \verb!f256! and \verb!f64! types and the and insert explicit boxing operations around the result, and unboxing operations around the arguments. Roughly speaking we want the following equivalence
 \[
-    \mathtt{box}\ (f_{\mathrm{unboxed}} (\mathtt{unbox}\ x))
+    f_{\mathrm{boxed}} \equiv \mathtt{box}\ (f_{\mathrm{unboxed}} (\mathtt{unbox}\ x))
 \]
+to hold.
 
-Then we only have to implement support for unboxed operations
+Then we only have to implement support for unboxed operations, and the complexity of dealing with memory allocation, loading and storing vector values to memory will be handled in one location.
+
+For boxing we will make two primops \verb!__f256_box! and \verb!__f256_unbox!.
+
+\paragraph{Unboxing}
+The unboxing operation will just load the vector from memory using a \verb!vmovupd! instruction.
+
+\paragraph{Boxing}
+The boxing operation is a bit more complicated. We will not generate code for the boxing operation. What we will do instead is to rewrite the boxing operation to the following code in the last step of the optimizer:
+\begin{lstlisting}
+let
+  val box = alloc_vector ()
+  val ()  = store_vector (value, box)
+in box
+\end{lstlisting}
+Where the two \verb!alloc_vector! and \verb!store_vector! will be distinct primops. \verb!alloc_vector! will use the \verb!SCRATCHMEM! primop to get 32 bytes of memory for a box. Then the \verb!store_vector! primop will do a single \verb!vmovupd! to store the content of the vector register in memory.
+
+The reason why we have it as two distinct primops is, that we rely on elimination of boxing operations in the compiler to get decent performance. Manipulating intermediate code with explicit boxing operations is much simpler than manipulating stores and allocs as well.
 
 \subsection{Instruction selection}
+
+We now have one job to do before we can actually compile some code. We will select instruction sequences to generate for the unboxed primops.
+
+\paragraph{Artithmetic and logic}
+\paragraph{Reductions}
+\paragraph{Comparisons and conditionals}
+\paragraph{Loads and stores}
 
 4. Select instructions to implement the unboxed primops.
 
@@ -278,13 +354,58 @@ vaddsd %xmm1, %xmm0, %xmm1
 Since we did not want to modify the memory allocation in MLKit too much, we have made the decision to rely on the unaligned memory operations that are possible in AVX2. They might be a little slower than making sure that all accesses are properly aligned.
 
 \subsection{Unboxing}
-5. Optimize the intermediate code to get rid of unnessecary boxing operations.
+
+Since our representation of vectors is boxed, then we will have quite a large overhead doing any operations on them. Every time we want to operate on a vector we have to unbox it, do the operation and box the result. That is quite costly. In order to generate efficient machine code, we want to get rid of unnessecary boxing operations. We will do two fairly simple optimizations for now.
+
+\paragraph{Elimination of box-unbox and unbox-box}
+If we do a series of vector operations in a row, we will have box and unbox operations in between. These can be easily eliminated by considering the equivalences
+\[
+    \mathtt{box} (\mathtt{unbox}\ x) \equiv x
+\]
+and
+\[
+    \mathtt{unbox} (\mathtt{box}\ x) \equiv x
+\]
+that we assume to hold for our boxing operations. The explicit unboxing and boxing of, say, compiling $(x + y) * (a + b)$ might give us the program 
+\begin{lstlisting}
+box ( mul ( unbox (box (add (unbox x, unbox y)))
+          , unbox (box (add (unbox a, unbox b)))
+          ))
+\end{lstlisting}
+We can then safely rewrite this to
+\begin{lstlisting}
+box ( mul ( add (unbox x, unbox y)
+          , add (unbox a, unbox b)
+          ))
+\end{lstlisting}
+Eliminating 4 boxing and unboxing operations.
+
+\paragraph{Unbox let-binding of vectors}
+The explicit boxing and unboxing might leave us with a program like
+\begin{lstlisting}
+let
+  val a = box (add (unbox x, unbox y))
+  val b = box (mul (unbox x, unbox y))
+in box (sub (unbox a, div (unbox b, unbox a)))
+end
+\end{lstlisting}
+This has a lot of unnessecary boxing operations that the previous optimization did not get rid of. If we know that a boxed let-binding is always used in a unbox operation it its scope, then we can safely eliminate those operations. Then we can rewrite the previous program to
+\begin{lstlisting}
+let
+  val a = add (unbox x, unbox y)
+  val b = mul (unbox x, unbox y)
+in box (sub (a, div (b, a)))
+end
+\end{lstlisting}
+Which eliminates 5 boxing and unboxing operations and will give us fairly efficient straight-line machine code. These two optimizations are implemented in the optimizer for MLKits intermediate language.
 
 \subsection{Signature using primops}
 
 6. Implement the REAL4 signature using the primops.
 
-Pretty straight forward. We have primops for all the things.
+Since our boxed representation is the same as for unboxed arrays of reals, we can use the \verb!__blockf64! primop for making vector from tuples. Similarly we can index into the vector using the \verb!__blockf64_sub_real! primop.
+
+All the scalar operations can be implemented using the vector version combined with broadcast.
 \begin{lstlisting}[frame=single]
 structure M256d :> REAL4 = struct
   type m256d = string
@@ -293,6 +414,9 @@ structure M256d :> REAL4 = struct
   type interface = real * real * real * real
 
   fun mk (v: interface): m256d = prim("__blockf64", v)
+  fun index (v: m256d, i: int): real = prim("__blockf64_sub_real", (v, i))
+  fun read (v: m256d): interface =
+    (index (v,0), index (v,1), index (v,2), index (v,3))
 
   fun broadcast (v: real): m256d = prim("__m256d_broadcast", v)
   fun add (a: m256d, b: m256d): m256d = prim("__m256d_plus", (a,b))
@@ -301,79 +425,6 @@ structure M256d :> REAL4 = struct
   (* And so on *)
  end
 \end{lstlisting}
-
-\subsection{Data types}
-
-The MLKit has a boxed floating point representation accessible to the programmer as the \verb!real! type in Standard ML. Internally in the optimizer, unnessecary boxing operations are avoided by using unboxed operations directly on floating point registers thereby avoiding expensive memory operations in basic blocks. Due to the uniform memory represenation, these unboxed floats can not be passed to generic functions and should therefore not be exposed to the programmer.
-
-We will do something similar for our vector representation. A boxed representation will be visible to the programmer, but internally a \verb!F256! type will be used to represent a register containing 4 64-bit floating point numbers.
-
-\subsection{Primops}
-
-Except for memory operations, the primops will correspond directly to the AVX2 instructions. For now borrowing from intel terminology, \verb!__m256d! will be the prefix for operations on sets of 4 reals.
-
-\subsubsection{Loading and storing}
-
-Reuse f64 blocks for both reading and writing to arrays and for boxing.
-
-\verb!blockf64_sub_m256d!
-
-\verb!blockf64_update_m256d!
-
-Can be used to implement a fast fold, map, etc. for unboxed arrays of reals.
-
-
-TODO: Make sure that memory accesses are aligned.
-
-\subsubsection{Arithmetic operations}
-
-\verb!__m256d_broadcast! will broadcast one \verb!real! into all 4 elements of a 4 element vector.
-
-\verb!__m256d_plus! will do vector addition. We will have similar primops for other arithmetic operations.
-
-\subsubsection{Conditional operations and masks}
-
-The conditional operations all have the type \verb!m256d -> m256d -> mask! where the mask is also a vector residing in a vector register.
-
-\verb!__m256d_blend! has the type \verb!m256d -> m256d -> mask -> m256d! where we can blend two vectors based on a mask.
-
-\verb!__m256d_all!, \verb!__m256d_any! have the type \verb!mask -> bool!
-
-The instruction \verb!vmovmsk! will move the 4 bit masks into an integer register and we can then implement the conditional operations.
-
-For \verb!all! we move \verb!true! into the destination if the mask is $1111$ otherwise we set it to \verb!false!.
-For \verb!any! we move \verb!true! into the destination if the mask is not $0000$ otherwise we set it to \verb!false!.
-
-\subsubsection{Primops}
-
-Both boxed and unboxed version of intrinsics. The unboxed ones are not available the the programmer, but are used internally in the optimizer.
-
-\subsubsection{Boxing}
-
-An representation of a boxing operation \verb!__f256_box! will be rewritten in a final step of the optimizer to be
-\begin{lstlisting}
-let
-  val box = alloc_vector ()
-  val ()  = store_vector (value, box)
-in box
-\end{lstlisting}
-Where the two operations will be distinct primops. This makes it easier to manipulate boxing operations internally in the optimizer.
-
-
-We reuse the blockf64 primop for allocating boxes. This means that the stored 
-
-Since Standard ML is polymorphic, there might be polymorphic functions that can receive arguments of any type. This is typically achieved by having a uniform representation of values. Typically a box (pointer to the underlying data). There is a substantial penalty for this, since in order to do operations on the underlying value, there is a level of indirection. For our new vector type we will have to use 16 bytes of memory in addition to the pointer to represent something that typically fits in a register.
-
-Any operation that works on a boxed representation will typically have to unbox the data, do the operation and box the result again. This is very costly on modern hardware.
-
-In some sense
-\[
-    box (unbox\ x) \equiv x
-\]
-and
-\[
-    unbox (box\ x) \equiv x
-\]
 
 \section{Data-parallel programming}
 
