@@ -11,6 +11,8 @@
 \lstset{language=ML}
 \lstset{basicstyle=\footnotesize\ttfamily,breaklines=true}
 
+\setcounter{tocdepth}{2}
+
 \title{Extending MLKit with vector instructions}
 \author{Christian Kjær Larsen}
 
@@ -41,13 +43,25 @@ The goal of this project is to add packed vector support to the MLKit\cite{mlkit
         Finally we implement compiler support for Intel AVX in the MLKit Standard ML compiler by providing a set of intrinsics that compile to efficient code that use native vector instructions.
 \end{enumerate}
 
+\subsection{Source code}
+We have included two archives with source code. One is the source code of the forked MLKit compiler, and the other is the libraries, example programs and benchmarks written while completing this project.
+
 \section{Background}
 
+In this section we will motivate the project by giving some background on vector extensions in modern CPUs and how one would typically accelerate a program using vector instructions is mainstream programming languages.
+
 \subsection{Vector instructions in modern CPUs}
+
+The rise of video processing and gaming in desktop computers 
+
+Relatively short vectors, 64 to 512 bits.
+
 
 Single instruction stream, but it works on multiple independent pieces of data.
 
 Fewer data dependencies and fewer instructions to be decoded.
+
+Example with image processing. Changing the brightness of an image. Each pixel is truly independent.
 
 MMX, SSE and AVX in Intel processors.
 
@@ -70,20 +84,27 @@ Supposed to be portable, so you can write a function that works for vectors of, 
 
 \subsubsection{.NET and Java}
 
-\url{https://docs.microsoft.com/en-us/dotnet/api/system.numerics.vector?view=net-5.0}
+Lately also higher level languages like C\# and Java have added support for vector instructions.
 
+Recently, Microsoft added the library \verb!System.Numerics.Vector!\footnote{\url{https://docs.microsoft.com/en-us/dotnet/api/system.numerics.vector?view=net-5.0}} such that C\# programmers could accelerate their programs the SIMD instructions of modern CPUs.
+
+The library makes it possible to write programs that are generic in both vector types and vector lengths. Then the JIT-compiler will use vector instructions if they are supported on the host, otherwise there will be a fallback to a slower implementation using regular instructions.
+
+A similar thing will be added to the JVM in version 16\footnote{\url{https://openjdk.java.net/jeps/338}}.
+
+Both the .NET and the JVM implementations will have to be platform agnostic, since both of them compile to intermediate code that has no knowledge of the arhitecture on which it runs. This means that the runtime will JIT-compile intermediate code to vector instructions only if they are supported on the host.
 
 \subsubsection{Challenges}
 
-One major challenge is not to tie the implementations to tightly to the specific instruction set. It should be fairly easy to change a program from say AVX2 to Neon. This then gives the problem of instruction selection. Do you expose direct versions of the AVX2 instructions, and then make other instruction sets emulate those, or do you try to find a common ground, that makes useful operations with good performance available on all CPUs.
+One major challenge is not to tie the implementations to tightly to the specific instruction set. It should be fairly easy to change a program from say AVX2 to Neon. This then gives the problem of instruction selection. Do you expose direct versions of the AVX2 instructions, and then make other instruction sets emulate those, or do you try to find a common ground, that makes useful operations with good performance available on all CPUs. This is some of the problems faced by the designers of the JVM and .NET vector APIs, and we will try to consider some of the same issues.
 
-Take for instance a horizontal add,
+Take for instance the sum of a vector with 4 elements,
 \[
-    \mathtt{hadd}\ [a_1, \ldots, a_4] = a_1 + \cdots + a_4
+    \mathtt{sum}\ [a_1, \ldots, a_4] = a_1 + \cdots + a_4.
 \]
-for reducing a 4 element vector. The AVX2 instruction set has no direct support, and the most efficient implementation might depend on vector sizes and element types. The proposed RISC-V vector extensions directly expose a \texttt{vfredsum.vs} that directly reduces a vector.
+The AVX2 instruction set has no direct support, and the most efficient implementation might depend on vector sizes and element types. The proposed RISC-V vector extensions directly expose a \texttt{vfredsum.vs} that directly reduces a vector. If we looked at the Intel instruction set, we would probably not include this operation, since there is no simple efficient way to implement it. If we would focus on the proposed RISC-V vector extensions, we would add it without hesitation.
 
-Since we in this project only focus on MLKits 64 bit intel backend, we restrict ourselves to vectors of reals (64 bit floats) of 4 elements. This is supported by AVX2 which is widely supported now. We will of course keep in mind to design our library such that it is not too tied to AVX2.
+Since we in this project only focus on MLKits 64 bit Intel backend, we restrict ourselves to vectors of reals (64 bit floats) of 4 elements. This is supported by AVX2 which is widely supported now. We will of course keep in mind to design our library such that it is not too tied to AVX2.
 
 \section{Design of a vector signature}
 
@@ -241,14 +262,14 @@ Rewriting a program like this is a bit mechanical, and could maybe be done autom
 In this section we will describe the changes made to the MLKit compiler in order to support the vector operations described in the precious section using AVX2 instructions. The internals of the MLKit is not super documented, so there will be a lot of mentions of concepts in the compiler that has no references, and is simply understood by reading through the codebase.
 
 \subsection{Types}
+We will represent vectors and vector masks in MLKit as strings. This means that the default representation of vectors will be boxed, and we can therefore easily use vectors in generic functions and have them garbage collected and so forth. This will make operations on vectors fairly inefficient, since will will have to load and store them every time we do a vector operation. We will solve some of these inefficiencies later in this section. 
 
 \subsection{Primops}
-The way that the programmer will have access to native vector instructions is through the \texttt{prim} feature of MLKit. 
+The way that the programmer will have access to native vector instructions is through the \texttt{prim} feature of MLKit. In a library we can call a primop, and then we can generate native code in the code generator for that particular primop, and get efficient machine code for particular operations.
 
 On table~\ref{tbl:primops} an overview of the added user facing primops can be seen.
-
 \begin{table}
-\begin{tabular}{ l l l }
+\begin{tabular}{l l l}
     \toprule
     Category & Primop & Type \\
     \midrule
@@ -279,10 +300,9 @@ On table~\ref{tbl:primops} an overview of the added user facing primops can be s
 \label{tbl:primops}
 \end{table}
 
-We steal the naming convention from Intel that \texttt{m256d} is a 256 bit vector of double precision floating point numbers. The user facing type of vectors is \verb!string! which is chosen, since in the compiler it is a type that roughly corresponds to an array of bytes. We can hide this type in a structure which implements the \texttt{REAL4} signature by using opaque signature matching, so that the user does not accidentally concatenate it with another string.
+We steal the naming convention from Intel that \texttt{m256d} is a 256 bit vector of double precision floating point numbers. The user facing type of vectors is \verb!string! which is chosen, since in the compiler it is a type that roughly corresponds to an array of bytes. We can hide this type in a structure which implements the \texttt{REAL4} signature by using opaque signature matching, so that the user does not accidentally concatenate it with a string.
 
 Most of these operations correspond directly to the functions in the \texttt{REAL4} signature. Additionally we have added primops for dealing with unboxed arrays of reals. The \verb!__blockf64_update_m256d! primop will update 4 values at the specified index in a block of memory containing unboxed reals. The \verb!__blockf64_sub_m256d! will get the 4-element vector from the specified index.
-
     
 \subsection{Internal representation}
 
@@ -294,13 +314,12 @@ We will do something similar for our vectors. For the programmer all the vector 
 
 \subsection{Implementing boxed operations}
 
-To implement the primops in table~\ref{tbl:primops} we take a pretty simple approach. We make unboxed versions of the primops that work on vector and floating point registers using the \texttt{F64} and \texttt{F256} types. We then insert explicit boxing operations around the result, and explicit unboxing operations around the arguments. In other words we will have the equivalence
+To implement the primops in table~\ref{tbl:primops} we take a pretty simple approach. We make unboxed versions of the primops that work on vector and floating point registers using the \texttt{F64} and \texttt{F256} types. We then insert explicit boxing operations around the result, and explicit unboxing operations around the arguments. In other words we can implement a boxed version of a function by rewriting it using a unboxed version
 \[
-    f_{\mathrm{boxed}} \equiv \mathtt{box}\ (f_{\mathrm{unboxed}} (\mathtt{unbox}\ x))
+    f_{\mathrm{boxed}} \equiv \mathtt{box}\ (f_{\mathrm{unboxed}} (\mathtt{unbox}\ x)).
 \]
-to hold.
 
-Then we only have to implement support for unboxed operations, and the complexity of dealing with memory allocation, loading and storing vector values to memory will be handled in the implementation of the the primops \verb!__f256_box! and \verb!__f256_unbox!.
+Then we only have to implement support for unboxed operations, and the complexity of dealing with memory allocation, loading and storing vector values to memory will be handled in the implementation of the the primops \verb!__f256_box! and \verb!__f256_unbox!. There are already primops for boxing and unboxing reals that we can reuse.
 
 For instance we will implement \verb!__m256d_broadcast x! by rewriting it to
 \begin{verbatim}
@@ -316,34 +335,59 @@ in box
 \end{lstlisting}
 Where \verb!SCRATCHMEM 32! is a primop that will allocate 32 bytes of uninitialized memory. Then the \verb!__f256_store! primop will do a single \verb!vmovupd! to store the content of the vector register in memory.
 
-The reason why we have it as two distinct primops is, that we rely on elimination of boxing operations in the compiler to get decent performance. Manipulating intermediate code with explicit boxing operations is much simpler than manipulating stores and allocs as well.
+The reason why we have boxing as a distinct primops is, that we rely on elimination of boxing operations in the compiler to get decent performance. Manipulating intermediate code with explicit boxing operations is much simpler than manipulating stores and allocs as well.
 
 \subsection{Instruction selection}
 
 We now have one job to do before we can actually compile some code. We will select instruction sequences to generate for the unboxed primops.
 
 \paragraph{Artithmetic and logic}
+All the arithmetic primops and \verb!f256_or! and \verb!f256_and! can be implemented by a single instruction, and are very simple and efficient. Implementing \verb!not_f256! requires an \verb!xor! with a mask with all 1s. We can generate a mask with all 1s with the \verb!vpcmpeqd! instruction. It compares vectors for equality, and we can just compary any vector with itself.
+
 \paragraph{Reductions}
-\paragraph{Comparisons and conditionals}
-\paragraph{Loads and stores}
+The vector reductions are a bit more interesting. There is not great support in AVX2 for vector reductions, since the entire point of vector instructions is to operate on independent data.
 
-4. Select instructions to implement the unboxed primops.
+We will implement support for \verb!__f256_any! and \verb!__f256_all! by using the \verb!vmovmskpd! instruction. It will move a mask register with the value
+\[
+    b_0 \ldots b_{255}
+\]
+into a general purpose register with by extracting the last bit of each of each element
+\[
+    b_{63}b_{127}b_{191}b_{255}0\ldots0.
+\]
+We can then implement \verb!any! by checking whether this bitstrin is different from 0 and we can implement \verb!all! by checking whether this bit string is equal to $1111$.
 
-Some are straight forward, some require a sequence of operations. Simple arithmetic vs. reductions.
+The reductions \verb!__f256_sum! and \verb!__f256_product! requires a few more instructions.
 
-On figure XXX we have sketched out our implementation of a horizontal sum of a vector register.
-
-Assume that the argument is in register \verb!ymm0!, then the following instruction sequence will place the sum of all elements in the bottom of register \verb!xmm1!:
-
+For the sum of a vector register \verb!ymm0! there is a few different ways to implement the reduction. We either have to use a horizontal add which will add together the top two elements and the bottom two elements. We then have to shuffle the elements around and do a scalar addition at the end. AVX2 has no horizontal multiplication though, so we have chosen another approach just so that the implementations for addition and multiplication are similar. The following instruction sequence vill do a reduction with plus, and a reduction with multiplication can be achieved by replacing \verb!add! with \verb!mul!.
 \begin{verbatim}
-vextractf128 0x1, %ymm0, %xmm1
-vaddpd %xmm0, %xmm1, %xmm0
-vunpckhpd %xmm1, %xmm1, %xmm0
-vaddsd %xmm1, %xmm0, %xmm1
+vextractf128 0x1, %ymm0, %xmm1 (1)
+vaddpd %xmm0, %xmm1, %xmm0     (2)
+vunpckhpd %xmm0, %xmm0, %xmm1  (3)
+vaddsd %xmm1, %xmm0, %xmm1     (4)
 \end{verbatim}
 
-\includegraphics[width=\textwidth]{sum.png}
+We have tried to visualize the shuffling around of elements on figure~\ref{fig:hadd}. The first instruction will extract the top two elements. The second instruction will add the bottom and the top together. The third instruction will extract the top element and the last instruction will do the sum in the bottom element. Here we also see an advantage of the overlapping vectors. We can use te same registers for scalars, two element vectors and four element vectors.
 
+\begin{figure}
+    \caption{Implementation of sum}
+    \label{fig:hadd}
+    \includegraphics[width=\textwidth]{sum.png}
+\end{figure}
+
+\paragraph{Comparisons and conditionals}
+Usual comparison operations on x86 will set some flags. For AVX2 it will place a mask into a \verb!ymm! register.
+
+Comparisons are a single instruction. We can use the reductions to get a boolean out that we can use in an if-expression in SML.
+
+\verb!__f256_blend! is just a single instruction.
+\paragraph{Loads and stores}
+
+Broadcast is a single instruction.
+
+True and false constants use \verb!xor! or \verb!vpcmpeqd! with the same register to generate masks of 0s and 1s.
+
+Sub and update use a single \verb!vmovupd!.
 
 Since we did not want to modify the memory allocation in MLKit too much, we have made the decision to rely on the unaligned memory operations that are possible in AVX2. They might be a little slower than making sure that all accesses are properly aligned.
 
@@ -391,11 +435,9 @@ let
 in box (sub (a, div (b, a)))
 end
 \end{lstlisting}
-Which eliminates 5 boxing and unboxing operations and will give us fairly efficient straight-line machine code. These two optimizations are implemented in the optimizer for MLKits intermediate language.
+which eliminates 5 boxing and unboxing operations and will give us fairly efficient straight-line machine code. These two optimizations are implemented in the optimizer for MLKits intermediate language.
 
 \subsection{Signature using primops}
-
-6. Implement the REAL4 signature using the primops.
 
 Since our boxed representation is the same as for unboxed arrays of reals, we can use the \verb!__blockf64! primop for making vector from tuples. Similarly we can index into the vector using the \verb!__blockf64_sub_real! primop.
 
@@ -446,6 +488,7 @@ fun map_simd (f : simd -> simd) (a : t) : t =
 \end{lstlisting}
 
 \section{Evaluation}
+In this section we will evaluate our changes to the MLKit compiler. First we will inspect the output, and see if we generate assembly code that are adequately unboxed. Finally we will benchmark some simple programs that we have optimized using our vector library.
 
 \subsection{Inspecting assembly code from example programs}
 
@@ -499,11 +542,13 @@ Again fully unboxed.
 
 \subsection{Benchmarks}
 
-In this section we will benchmark small example programs and try to explain why they are fast, or why in some cases they are slower than expected.
+In this section we will benchmark small example programs and try to explain why they are fast, or why in some cases they are slower than expected. All of the examples will use the modified version of the \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}} from the standard library.
 
-\url{https://www.agner.org/optimize/blog/read.php?i=838}
+We are benchmarking on two different CPUs.
 
-Using \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}}
+Laptop with a Intel Core i5-6300U with 16GB of 2133 MHz memory
+
+Desktop with a 
 
 \subsubsection{Arithmetic}
 
@@ -549,9 +594,6 @@ The result for various array sizes are for Intel i5:
 \end{center}
 
 It turns out that 
-
-\subsubsection{Mandelbrot}
-
 \subsubsection{Conditionals}
 
 \begin{lstlisting}
@@ -577,7 +619,16 @@ in RealTable.modify_simd
 
 But this bechmark is a little misleading, since it uses a conditional move instruction instead of jumps, and therefore is highly efficient on modern hardware. The speed is of the vectorized version is comparable to the aritmetic program from before.
 
+\subsubsection{Mandelbrot}
+
+Constants are boxed, because moving them out of the loop makes them cross a function call. That is kinda expensive. Multiple uses equals multiple unboxes.
+
+
 \section{Future work}
+
+In this section we will discuss some future improvements that will improve the performance of vector code compiled with the MLKit.
+
+\paragraph{Unboxed tail recursion}
 
 Aligned memory accesses
 
@@ -588,6 +639,10 @@ foldl Simd4.add (Simd4.broadcast) arr
 \end{lstlisting}
 
 foldl will probably be tailrecursively with a vector accumulator. This is the common way to do it. The problem is that we have to box and unbox for every 4 elements. The current boxing implementation is very expensive.
+
+\paragraph{Keeping constants in registers}
+
+\paragraph{Common subexpression elimination}
 
 Common subexpression elimination to reduce unboxing load.
 

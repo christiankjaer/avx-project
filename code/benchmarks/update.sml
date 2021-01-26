@@ -23,4 +23,4 @@ fun run i =
   (print ("\n" ^ Int.toString i ^ " elements\n");
   bench_simple i 10)
 
-val _ = List.app run [1000, 10000, 100000, 1000000, 10000000, 100000000]
+val _ = List.app run [10000, 100000, 1000000, 10000000]

@@ -27,7 +27,7 @@ fun mandelbrot_simd (re: simd, im: real): simd =
         val im2 = square im'
         val mask = le (add (re2, im2), four)
       in
-        if (any mask andalso iter < 1000)
+        if (iter < 1000 andalso any mask)
         then
           let 
             val re'' = add ((sub (re2, im2)), re)
@@ -53,15 +53,15 @@ structure U = VectorUtils(V)
 
 val _ =
   let
-    val m = bench("Mandelbrot simd", 100, fn () => (), fn () =>
-    M.mandelbrot_simd (V.mk (~0.4, ~0.39, ~0.38, ~0.37), ~0.6))
+    val m = bench("Mandelbrot simd", 10, fn () => (), fn () =>
+    M.mandelbrot_simd (V.mk (~0.4, ~0.39, ~0.38, ~0.37), ~0.60))
 
-    val mtup = bench("Mandelbrot simple", 1000, fn () => (), fn () =>
+    val mtup = bench("Mandelbrot simple", 10, fn () => (), fn () =>
       let 
-        val m1 = mandelbrot (~0.40, ~0.6)
-        val m2 = mandelbrot (~0.39, ~0.6)
-        val m3 = mandelbrot (~0.38, ~0.6)
-        val m4 = mandelbrot (~0.37, ~0.6)
+        val m1 = mandelbrot (~0.40, ~0.60)
+        val m2 = mandelbrot (~0.39, ~0.60)
+        val m3 = mandelbrot (~0.38, ~0.60)
+        val m4 = mandelbrot (~0.37, ~0.60)
       in (m1, m2, m3, m4) end)
   in 
     print (U.toString m ^ "\n");

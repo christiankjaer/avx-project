@@ -19,6 +19,6 @@ fun bench_sum size reps =
 
 fun run i =
   (print ("\n" ^ Int.toString i ^ " elements\n");
-  bench_sum i 4)
+  bench_sum i 10)
 
-val _ = List.app run [10000, 100000, 1000000, 10000000, 100000000]
+val _ = List.app run [10000, 100000, 1000000, 10000000]
