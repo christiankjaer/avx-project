@@ -5,4 +5,5 @@ tup4.sml
 vector_utils.sml
 benchmarks/bench.sml
 mandelbrot_lib.sml
-mandelbrot_pixel.sml
+simd_table.sml
+mandelbrot_table.sml
