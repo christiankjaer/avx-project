@@ -7,9 +7,11 @@
 \usepackage{listings}
 \usepackage{graphicx}
 \usepackage{booktabs}
-
+\usepackage{minted}
+\setminted{fontsize=\footnotesize}
 \lstset{language=ML}
 \lstset{basicstyle=\footnotesize\ttfamily,breaklines=true}
+
 
 \setcounter{tocdepth}{2}
 
@@ -442,7 +444,7 @@ which eliminates 5 boxing and unboxing operations and will give us fairly effici
 Since our boxed representation is the same as for unboxed arrays of reals, we can use the \verb!__blockf64! primop for making vector from tuples. Similarly we can index into the vector using the \verb!__blockf64_sub_real! primop.
 
 All the scalar operations can be implemented using the vector version combined with broadcast.
-\begin{lstlisting}[frame=single]
+\begin{minted}[frame=single]{sml}
 structure M256d :> REAL4 = struct
   type m256d = string
   type simd = m256d
@@ -460,22 +462,22 @@ structure M256d :> REAL4 = struct
 
   (* And so on *)
  end
-\end{lstlisting}
+\end{minted}
 
 \section{Data-parallel programming}
 
 We modify \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}} from the standard library to have support for vectorized traversals. This basically just dropping in our primops for vectorized updates and indexing for unboxed arrays of reals.
-\begin{lstlisting}[frame=single]
+\begin{minted}[frame=single]{sml}
 type t = chararray
 fun update_m256d (t: t, i: int, v: simd): unit =
     prim("__blockf64_update_m256d", (t,i,v))
 
 fun sub_m256d (t: t, i: int): simd =
     prim("__blockf64_sub_m256d", (t,i))
-\end{lstlisting}
+\end{minted}
 
 Assuming that we have an array where the length is a multiple of 4, we can for instance implement a vectorized \texttt{map} pretty easily which if we are lucky will be fully unboxed
-\begin{lstlisting}[frame=single]
+\begin{minted}[frame=single]{sml}
 fun map_simd (f : simd -> simd) (a : t) : t =
   let val n = length a
     val b: t = alloc n
@@ -485,60 +487,106 @@ fun map_simd (f : simd -> simd) (a : t) : t =
       else b
   in lr 0
   end
-\end{lstlisting}
+\end{minted}
+Similarly we can implement tabulate, folds etc. using vector instructions giving us vectorized versions. These are included in the file \verb!simd_table.sml!.
+
+With tabulate and our previous Mandelbrot implementation, we can calculate and entire image:
+\begin{minted}[frame=single]{sml}
+structure V = M256d
+structure M = Mandelbrot(V)
+fun mandel (width, heigth, left, right, bottom, top) =
+  let
+    val stepX = (right - left) / (Real.fromInt width)
+    val stepY = (top - bottom) / (Real.fromInt height)
+    fun f i =
+      let
+        val xstart = i mod width
+        val x1 = left + (Real.fromInt xstart * stepX)
+        val x2 = left + (Real.fromInt (xstart + 1) * stepX)
+        val x3 = left + (Real.fromInt (xstart + 2) * stepX)
+        val x4 = left + (Real.fromInt (xstart + 3) * stepX)
+        val y = bottom + (Real.fromInt (i div width) * stepY)
+      in M.mandelbrot_simd (V.mk (x1, x2, x3, x4), y) end
+  in
+    RealTable.tabulate_simd (width * height, f)
+  end
+)
+\end{minted}
+giving is the nice picture on figure~\ref{fig:mandel}.
+\begin{figure}
+    \label{fig:mandel}
+    \caption{Mandelbrot with AVX2 instructions}
+    \includegraphics[width=\textwidth]{mandel.png}
+\end{figure}
 
 \section{Evaluation}
 In this section we will evaluate our changes to the MLKit compiler. First we will inspect the output, and see if we generate assembly code that are adequately unboxed. Finally we will benchmark some simple programs that we have optimized using our vector library.
 
 \subsection{Inspecting assembly code from example programs}
 
-We make som functions that calls the primops with the right types.
-\begin{lstlisting}
-type m256d = string
-fun broadcast (a: real): m256d = prim("__m256d_broadcast", a)
-fun add (a: m256d, b: m256d): m256d = prim("__m256d_plus", (a, b))
-fun adds (a: m256d, b: real): m256d = add(a, broadcast(b))
-
-fun mul (a: m256d, b: m256d): m256d = prim("__m256d_mul", (a, b))
-fun muls (a: m256d, b: real): m256d = mul(a, broadcast(b))
-
-fun sub (a: m256d, b: m256d): m256d = prim("__m256d_minus", (a, b))
-fun subs (a: m256d, b: real): m256d = sub(a, broadcast(b))
-\end{lstlisting}
 A simple example program only consisting of arithmetic operations.
-\begin{lstlisting}
-fun g (x: m256d) = add (x, mk (0.0, 1.0, 2.0, 3.0))
-fun f () =
-let
-  val a: m256d = mk (10.0, 20.0, 30.0, 40.0)
-  val b: m256d = mul (a, a)
-  val c: m256d = adds (b, 3.0)
-  val d: m256d = sub (c, a)
-  val e: m256d = g d
-in 
-  e
-end
-\end{lstlisting}
-The core of the generated assembly code is the following
-Disregarding the loading of vector literals, the resulting code is fully unboxed and just has a series of vector instructions.
+\begin{minted}{sml}
+val x: m256d = 
+  let val x = mk (1.0, 2.0, 3.0, 4.0)
+  in add (mul (x, broadcast 5.0), sub (broadcast 10.0, x))
+  end
+\end{minted}
+with \verb!x! stored in \verb!ymm4! and the box for the result in \verb!rax!, the instructions for this program is
+\begin{minted}{gas}
+movq $DLab.FloatLab2191test1.auto.mlbtest1.sml1,%r10
+movsd (%r10),%xmm8
+vbroadcastsd %xmm8,%ymm8
+vmulpd %ymm8,%ymm4,%ymm12
+movq $DLab.FloatLab1190test1.auto.mlbtest1.sml1,%r10
+movsd (%r10),%xmm8
+vbroadcastsd %xmm8,%ymm8
+vsubpd %ymm4,%ymm8,%ymm8
+vaddpd %ymm8,%ymm12,%ymm8
+vmovupd %ymm8,8(%rax)
+\end{minted}
+Which has all the vector instructions fully unboxed, and we just have vector operations directly on registers. This means that our optimizations work in this simple case.
 
-For branching we want to print 1.0 if any of the elements of \verb!x! are greater than their corresponding element in \verb!y! and 0.0 otherwise.
+We also take a look at a simple tail-recursive function:
+\begin{minted}{sml}
+val g: m256d =
+  let
+    fun loop (acc: m256d): m256d =
+      if (all (le (acc, broadcast 0.0)))
+      then acc
+      else loop (subs (acc, 1.0))
+  in loop (broadcast 100.0) end
+\end{minted}
+We will not include the assembly code here, but we can see that only the parts inside the if-condition and the else branches are unboxed. Everything that crosses a function call is boxed since we do not support arguments to functions in vector registers.
 
-\begin{lstlisting}
-fun gt (a: simd, b: simd): mask = prim("__m256d_greater", (a,b))
-fun any (a: mask): bool = prim("__m256d_any", a)
-let
-  val x = mk (2.0, 3.0, 4.0, 5.0)
-  val y = mk (3.0, 3.0, 3.0, 3.0)
-  val b = any (gt (x, y))
-in 
-  if b then printReal 1.0 else printReal 0.0
-end
-\end{lstlisting}
-
-This generates the following code
-
-Again fully unboxed.
+Finally we will take a look at the generated code for a simple update function on an array.
+\begin{minted}{sml}
+val x =
+  let
+        val t = RealTable.tabulate (10, (fn x => intToReal x))
+        val _ = RealTable.modify_simd (fn x => mul (add (x, x), x)) t
+  in t end
+\end{minted}
+The body of the loop actually just compiles to the following code:
+\begin{minted}{gas}
+FLab.lr4779test3.auto.mlbtest3.sml1:
+	leaq -8(%rsp),%rsp
+	movq (%rax),%rsi
+	cmpq %rsi,%rbx
+	jge .LLab.k9F790test3.auto.mlbtest3.sml1
+	movq 8(%rax),%rsi
+	vmovupd 8(%rsi,%rbx,8),%ymm12
+	vaddpd %ymm12,%ymm12,%ymm8
+	vmulpd %ymm12,%ymm8,%ymm8
+	movq 8(%rax),%rsi
+	movq %rbx,%r11
+	movq %rsi,%r10
+	vmovupd %ymm8,8(%r10,%r11,8)
+	addq $4,%rbx
+	jo __raise_overflow
+	leaq 8(%rsp),%rsp
+	jmp FLab.lr4779test3.auto.mlbtest3.sml1
+\end{minted}
+Which is as good as we can expect. There is no boxing. We load 4 elements from the array directly into a vector register. Perform the operations and store it directly again.
 
 \subsection{Benchmarks}
 
@@ -624,6 +672,18 @@ But this bechmark is a little misleading, since it uses a conditional move instr
 Constants are boxed, because moving them out of the loop makes them cross a function call. That is kinda expensive. Multiple uses equals multiple unboxes.
 
 
+\begin{center}
+\begin{tabular}{ c c c }
+    Size & Scalar (ms) & Vector (ms) \\
+    $400*280$ & $513.48$ & $249.78$ \\
+    $800*600$ & $2089.30$ & $1099.94$ \\
+    $1200*800$ & $4214.69$ & $2140.42$
+\end{tabular}
+\end{center}
+
+About a 2x speedup on i5.
+
+
 \section{Future work}
 
 In this section we will discuss some future improvements that will improve the performance of vector code compiled with the MLKit.
@@ -664,6 +724,10 @@ If the last operation is a box, then the instruction should write directly to me
 \section{Conclusion}
 
 AMD is fucked.
+
+Fairly ergonomic experience to program with.
+
+Should be possible to keep roughly the same interface with other instruction set.
 
 
 \bibliographystyle{unsrt}

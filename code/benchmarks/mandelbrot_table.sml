@@ -26,15 +26,14 @@ fun mandel () = RealTable.tabulate_simd (width * height, fn i =>
   end
 )
 
-val _ =
+fun mandel_simple () = RealTable.tabulate (width * height, fn i =>
   let
-    val m = mandel ()
-    val _ = print "P2\n"
-    val _ = print ((Int.toString width) ^ " " ^ (Int.toString height) ^ "\n")
-    val _ = print "1000\n"
-    val _ = RealTable.appi
-                       (fn (i, res) => print ((Int.toString (Real.floor res)) ^ (if (i mod width) = width - 1 then "\n" else " ")))
-                       m
+    val x = left + (Real.fromInt (i mod width) * stepX)
+    val y = bottom + (Real.fromInt (i div width) * stepY)
   in
-    ()
+    mandelbrot (x, y)
   end
+)
+
+val _ = bench("Mandelbrot with simd", 2, fn () => (), mandel)
+val _ = bench("Mandelbrot without simd", 2, fn () => (), mandel_simple)

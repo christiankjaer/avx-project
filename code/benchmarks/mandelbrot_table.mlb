@@ -1,0 +1,9 @@
+$(SML_LIB)/basis/basis.mlb
+../REAL4.sig
+../m256d.sml
+../tup4.sml
+../vector_utils.sml
+bench.sml
+../mandelbrot_lib.sml
+../simd_table.sml
+mandelbrot_table.sml
