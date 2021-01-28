@@ -54,22 +54,37 @@ In this section we will motivate the project by giving some background on vector
 
 \subsection{Vector instructions in modern CPUs}
 
-The rise of video processing and gaming in desktop computers 
+Ordinary instructions in a modern CPU typically work on one or more registers each containing a single value. For instance, the following X86-64 program will increment a number, and store it to memory:
+\begin{minted}{gas}
+addq 0x1, %rax
+movq %rax, (%r10)
+\end{minted}
 
-Relatively short vectors, 64 to 512 bits.
+During the 90s, the demand for doing signal and image processing on desktop computers rose, and CPUs designers began adding vector instructions to their processors. Image processing typically requires the same operations to be performed, say, for each pixel in an image. An efficient way to do this, is to add instructions that perform the same instruction on wider registers containing for instance 4 single precision floating point numbers.
 
+Compared to earlier vector CPUs, the vectors are in modern vector extensions are relatively short, typically from 128 to 512 bits.
 
-Single instruction stream, but it works on multiple independent pieces of data.
+On modern Intel CPUs we typically have access to an multitude of vector instruction for instance:
 
-Fewer data dependencies and fewer instructions to be decoded.
+\textbf{SSE2 (Streaming SIMD Extensions 2)} gives us 128 bit registers that can contain 8 to 64 bit integers, single and double precision floating point.
 
-Example with image processing. Changing the brightness of an image. Each pixel is truly independent.
+\textbf{AVX2 (Advanced Vector eXtensions 2)}
+gives us 256 bit registers, and adding instructions that operate on 3 registers not overwriting one of the arguments. This allows for more compact code. The following program will multiply two vectors of four 64-bit integers and store them to memory in two instructions
+\begin{minted}{gas}
+vpaddq %ymm0, %ymm1, %ymm2
+vmovdqa64 %ymm2, (%r10)
+\end{minted}
 
-MMX, SSE and AVX in Intel processors.
+On ARM there are also vector extentions:
 
-Neon on ARM processors.
+\textbf{Neon}
+allows up to 128 bit vectors of both integers and floating point.
+
+\textbf{SVE (Scalable Vector Extension)}
+is a variable length vector extension designed for high-performance computing, and it allows vector lengths from 128 to 2048 bits.
 
 \subsection{Programming model and higher level languages}
+Programmers do not usually write the assembly code directly, but rely on different high level constructs.
 
 \subsubsection{Intrinsics}
 
@@ -106,7 +121,7 @@ Take for instance the sum of a vector with 4 elements,
 \]
 The AVX2 instruction set has no direct support, and the most efficient implementation might depend on vector sizes and element types. The proposed RISC-V vector extensions directly expose a \texttt{vfredsum.vs} that directly reduces a vector. If we looked at the Intel instruction set, we would probably not include this operation, since there is no simple efficient way to implement it. If we would focus on the proposed RISC-V vector extensions, we would add it without hesitation.
 
-Since we in this project only focus on MLKits 64 bit Intel backend, we restrict ourselves to vectors of reals (64 bit floats) of 4 elements. This is supported by AVX2 which is widely supported now. We will of course keep in mind to design our library such that it is not too tied to AVX2.
+Since we in this project only focus on MLKits 64-bit Intel backend, we restrict ourselves to vectors of 4 reals (64-bit floats). This is supported by AVX2 which is widely supported now. We will of course keep in mind to design our library such that it is not too tied to AVX2.
 
 \section{Design of a vector signature}
 
@@ -160,14 +175,13 @@ There are two opaque types. \verb!simd! represents the actual vector and \verb!m
 
 We include arithmetic operations both in vector-vector and vector-scalar form. The comparisons will return masks where the individual elements correspond to the comparison between individual elements. We also include common boolean operations on masks.
 
-To collapse vectors into elements, we also include some reductions. Sum and product of vectors will collapse an entire vector into the sum or product of its elements. \verb!all! and \verb!any! will return true if all or any of its elements are true. Other reductions could also be added in the future like minimum and maximum.
+To collapse vectors into elements, we also include some reductions. \verb!sum! and \verb!product! will collapse an entire vector into the sum or product of its elements. \verb!all! and \verb!any! will return true if all or any of its elements are true. Other reductions could also be added in the future like minimum and maximum.
 
-
-A signature for packed integers \texttt{INT4} could also be added, and an implementation could also be made using AVX2 instructions, but we have chosen to focus on floating point in this project. It would of course include different operations more specific to integers.
+A signature for packed integers \texttt{INT4} could also be added, and an implementation could also be made using AVX2 instructions, but we have chosen to focus on floating point in this project.
 
 \subsection{Pure SML structure}
 
-It is pretty easy to implement a pure SML structure that we can use to test our hardware accelerated version against. We just use tuples of reals for vectors and tuples of booleans for masks.
+It is pretty easy to implement a pure SML structure that we can use to test our hardware accelerated version against. We just use tuples of reals for vectors and tuples of booleans for masks. A part of such an implementation can be seen on listing~\ref{lst:tup4}.
 \begin{lstlisting}[frame=single, label={lst:tup4}, caption={Implementation of \texttt{REAL4} using tuples}]
 structure Tup4 : REAL4 = struct
   type simd = real * real * real * real
@@ -182,12 +196,14 @@ structure Tup4 : REAL4 = struct
   (* And so on *)
 end
 \end{lstlisting}
+The entire implementation is included in the source code.
 
 \subsection{Writing programs}
 
-Writing a simple numeric program is very simple, since the \verb!simd! values are almost interchangable with reals.
+Writing a simple numeric program using this structure is very easy, since the \verb!simd! values are almost interchangable with reals.
 \begin{lstlisting}[frame=single, label={lst:numeric}, caption={Numeric program}]
 fun foo (x: real, y: real) = x*x + y*y
+
 fun foo_simd (x: simd, y: simd) = add (mul (x, x), mul (y, y))
 \end{lstlisting}
 We can write programs with conditionals by using the \texttt{blend} operation. It gives us the possibility to select from one of two vectors based on a mask. We can use it to write a vectorized version of a maximum function:
@@ -210,7 +226,7 @@ fun loop (x: simd): simd =
 
 \subsubsection{Vectorizing mandelbrot}
 
-Using these building blocks, we can try to rewrite a larger program to use the vectorized operations. We will take a look at a simple implementation of a function that calculates whether a complex number belongs to the Mandelbrot set.
+Using these building blocks, we can try to rewrite a larger program to use the vectorized operations. We will take a look at a simple implementation of a function that calculates whether a complex number belongs to the Mandelbrot set\footnote{OK. Formally we calculate how many iterations it takes to converge, and then we assume it diverges is it requires more than 1000 iterations. We typically only use this algorithm to color pixels in a nice image.}.
 \begin{lstlisting}[frame=single, label={lst:scalar_mandel}, caption={Scalar Mandelbrot}]
 fun mandelbrot (re: real, im: real): int =
   let
@@ -222,7 +238,7 @@ fun mandelbrot (re: real, im: real): int =
     go 0 0.0 0.0
   end
 \end{lstlisting}
-A way to approach it is to consider 4 values $(x_1, y), \ldots, (x_4, y)$. The problem is that for 4 pixels it might be the case that some diverge and some converge. We can use masks to essentially block the updates for pixels that have converged already.
+A way to approach vectorizing it is to consider 4 values at a time $(x_1, y), \ldots, (x_4, y)$. The problem is that for 4 pixels it might be the case that some diverge and some converge. We can use masks to essentially block the updates for pixels that have converged already.
 
 \begin{lstlisting}[frame=single, label={lst:vector_mandel}, caption={Vector Mandelbrot}]
 functor Mandelbrot(Real4 : REAL4) = struct
@@ -258,7 +274,9 @@ end
 \end{lstlisting}
 We start by computing the mask that corresponds to the condition in the original if-statement. If all values are false, we stop iterating, since all values in the vector has either converged or diverged. We then use the \verb!blend! operation to conditionally update only the iteration count and the temporary values for those elements where the if-condition in the original program would have been true.
 
-Rewriting a program like this is a bit mechanical, and could maybe be done automatically for these kinds of functions with some meta-programming.
+Rewriting a program like this is a bit mechanical, and could maybe be done automatically for these kinds of functions with some meta-programming or complicated array library.
+
+Running this code now with our mock implementation of vectors using tuples is a bit silly, so we will now implement AVX2 support in the MLKit to hopefully get this code running fast.
 
 \section{Implementation in the MLKit}
 In this section we will describe the changes made to the MLKit compiler in order to support the vector operations described in the precious section using AVX2 instructions. The internals of the MLKit is not super documented, so there will be a lot of mentions of concepts in the compiler that has no references, and is simply understood by reading through the codebase.
@@ -723,14 +741,78 @@ If the last operation is a box, then the instruction should write directly to me
 
 \section{Conclusion}
 
+Not that much added code to the compiler. Approximately 800 lines of code added.
+
 AMD is fucked.
 
 Fairly ergonomic experience to program with.
 
+Pretty fast.
+
 Should be possible to keep roughly the same interface with other instruction set.
+
 
 
 \bibliographystyle{unsrt}
 \bibliography{simd}
+
+\appendix
+
+\section{Included code}
+
+\subsection{MLKit source code}
+
+Also on SIMD branch on 
+\url{https://github.com/christiankjaer/mlkit}
+
+Changed files:
+
+Common/TYCON.sig
+Common/TYNAME.sig
+Common/TyCon.sml
+Common/TyName.sml
+Compiler/Backend/PrimName.sml
+Compiler/Backend/X64/INSTS\_X64.sml
+Compiler/Backend/X64/InstsX64.sml
+Compiler/Backend/X64/CodeGen.sml
+Compiler/Backend/X64/CodeGenUtil.sml
+Compiler/CompBasis.sml
+Compiler/CompBasisToLamb.sml
+Compiler/Lambda/EliminateEq.sml
+Compiler/Lambda/LAMBDA\_EXP.sml
+Compiler/Lambda/LambdaBasics.sml
+Compiler/Lambda/LambdaExp.sml
+Compiler/Lambda/LambdaStatSem.sml
+Compiler/Lambda/Lvars.sml
+Compiler/Lambda/LambdaOpt.sml
+Compiler/Regions/MulExp.sml
+Compiler/Regions/RTYPE.sig
+Compiler/Regions/RType.sml
+Compiler/Regions/RegionStatEnv.sml
+Manager/ManagerObjects0.sml
+
+
+\subsection{Example programs}
+
+Libraries
+
+\verb!REAL4.sig! vector signature.
+
+\verb!tup4.sml! implementation using tuples.
+
+\verb!m256d.sml! implementation using vector intrinsics.
+
+\verb!simd_table.sml! is an extension of the \verb!RealTable! with vectorized implementations.
+
+\verb!vector_utils.sml! contains some helper function for vectors.
+
+\verb!mandelbrot_lib.sml! contains a vectorized version of the mandelbrot function.
+
+\verb!mandelbrot_table.sml! contains a program that writes a ppm-image of the mandelbrot set to stadard out.
+
+Benchmarks
+
+Mandelbrot example program
+
 
 \end{document}
