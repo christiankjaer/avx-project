@@ -39,7 +39,7 @@ The goal of this project is to add packed vector support to the MLKit\cite{mlkit
     \item We start by investingating other approaches to SIMD programming in higher level languages. This is in order to settle on a
         good abstraction that is fairly easy to program with.
     \item
-        We then continue by designing a programming abstraction to be able to optimize a program in a generic way that is not tied to a particular instruction set or vector extensions.
+        We then continue by designing a programming abstraction to be able to optimize a program in a generic way that is not tied to a particular instruction set or set of vector extensions.
         We also write some simple example programs that will work as motivating examples and show that the abstraction is actually useful.
     \item
         Finally we implement compiler support for Intel AVX in the MLKit Standard ML compiler by providing a set of intrinsics that compile to efficient code that use native vector instructions.
@@ -54,22 +54,20 @@ In this section we will motivate the project by giving some background on vector
 
 \subsection{Vector instructions in modern CPUs}
 
-Ordinary instructions in a modern CPU typically work on one or more registers each containing a single value. For instance, the following X86-64 program will increment a number, and store it to memory:
+Ordinary instructions in a modern CPU typically work on one or more registers each containing scalar values. For instance, the following X86-64 program will increment a number, and store it to memory:
 \begin{minted}{gas}
 addq 0x1, %rax
 movq %rax, (%r10)
 \end{minted}
 
-During the 90s, the demand for doing signal and image processing on desktop computers rose, and CPUs designers began adding vector instructions to their processors. Image processing typically requires the same operations to be performed, say, for each pixel in an image. An efficient way to do this, is to add instructions that perform the same instruction on wider registers containing for instance 4 single precision floating point numbers.
+During the 90s, the demand for doing signal and image processing on desktop computers increased, and CPUs designers began adding vector instructions to their processors. Image processing typically requires the same operations to be performed, say, for each pixel in an image. An efficient way to do this, is to add instructions that perform the same instruction on wider registers containing for instance 4 single precision floating point numbers.
 
-Compared to earlier vector CPUs, the vectors are in modern vector extensions are relatively short, typically from 128 to 512 bits.
-
-On modern Intel CPUs we typically have access to an multitude of vector instruction for instance:
+On modern Intel CPUs we typically have access to an number of vector extensions. Popular ones include:
 
 \textbf{SSE2 (Streaming SIMD Extensions 2)} gives us 128 bit registers that can contain 8 to 64 bit integers, single and double precision floating point.
 
 \textbf{AVX2 (Advanced Vector eXtensions 2)}
-gives us 256 bit registers, and adding instructions that operate on 3 registers not overwriting one of the arguments. This allows for more compact code. The following program will multiply two vectors of four 64-bit integers and store them to memory in two instructions
+that gives us 256 bit registers, and adds instructions that operate on 3 registers not overwriting one of the arguments. This allows for more compact code. The following program will multiply two vectors of four 64-bit integers and store them to memory in two instructions using AVX instructions:
 \begin{minted}{gas}
 vpaddq %ymm0, %ymm1, %ymm2
 vmovdqa64 %ymm2, (%r10)
@@ -83,27 +81,31 @@ allows up to 128 bit vectors of both integers and floating point.
 \textbf{SVE (Scalable Vector Extension)}
 is a variable length vector extension designed for high-performance computing, and it allows vector lengths from 128 to 2048 bits.
 
+Other modern instruction sets like PowerPC, RISC-V and SPARC also include their own vector extensions.
+
 \subsection{Programming model and higher level languages}
 Programmers do not usually write the assembly code directly, but rely on different high level constructs.
 
 \subsubsection{Intrinsics}
 
-The primary way that people program with vector instructions is by using intrinsics.
+The primary way that people program with vector instructions is by using intrinsics. Compilers include C-libraries with intrinsic functions that are guaranteed to compile to vector instructions under the hood. For instance in the Intel C compiler, we can use the function
+\begin{minted}{c}
+#include <immintrin.h>
+__m256d _mm256_add_pd (__m256d a, __m256d b)
+\end{minted}
+to add together two vectors of 4 double precision floating point numbers. In the library, the type \verb!__m256d! represents a packed vector register of 4 doubles. These abstractions make it fairly easy to program with vectors, but a problem is that the implementations are highly tied to the particular instruction set. To target for instance ARM, you would have to rewrite the program entirely.
 
-Intrinsic functions for C/C++ guaranteeing what code is generated when the functions are called.
+\subsubsection{LLVM}
 
-\subsubsection{Rust}
+LLVM\footnote{\url{https://llvm.org/}} is a popular intermediate language used in a lot of modern compilers. It natively supports vector instructions, and has multiple backends that target different instruction sets. This means that if a high level language targets the LLVM, then making a portable vector library is fairly easy.
 
-Standard interface to generic functions that are lowered directly to LLVM and compiled for specific architectures there.
-\url{https://github.com/rust-lang/stdsimd}
-
-Supposed to be portable, so you can write a function that works for vectors of, say, 4 64-bit floats, and then it would be lowered to the LLVM type \verb!<4 x double>!. The problem of choosing good instruction for certain operations are then delegated to the LLVM backend.
+For instance Rust targets the LLVM intermediate language which. It provides a standard interface\footnote{\url{https://github.com/rust-lang/stdsimd}} to generic functions on vectors that are lowered directly to LLVM and compiled for specific architectures there. This means that you can write a function that works for vectors of, say, 4 64-bit floats, and then it would be lowered to the LLVM type \verb!<4 x double>!. The problem of choosing good instruction for certain operations are then delegated to the LLVM backend.
 
 \subsubsection{.NET and Java}
 
 Lately also higher level languages like C\# and Java have added support for vector instructions.
 
-Recently, Microsoft added the library \verb!System.Numerics.Vector!\footnote{\url{https://docs.microsoft.com/en-us/dotnet/api/system.numerics.vector?view=net-5.0}} such that C\# programmers could accelerate their programs the SIMD instructions of modern CPUs.
+Recently, Microsoft added the library \verb!System.Numerics.Vector!\footnote{\url{https://docs.microsoft.com/en-us/dotnet/api/system.numerics.vector}} such that C\# programmers could accelerate their programs the SIMD instructions of modern CPUs.
 
 The library makes it possible to write programs that are generic in both vector types and vector lengths. Then the JIT-compiler will use vector instructions if they are supported on the host, otherwise there will be a fallback to a slower implementation using regular instructions.
 
@@ -119,7 +121,7 @@ Take for instance the sum of a vector with 4 elements,
 \[
     \mathtt{sum}\ [a_1, \ldots, a_4] = a_1 + \cdots + a_4.
 \]
-The AVX2 instruction set has no direct support, and the most efficient implementation might depend on vector sizes and element types. The proposed RISC-V vector extensions directly expose a \texttt{vfredsum.vs} that directly reduces a vector. If we looked at the Intel instruction set, we would probably not include this operation, since there is no simple efficient way to implement it. If we would focus on the proposed RISC-V vector extensions, we would add it without hesitation.
+The AVX2 instruction set has no direct support for such an operation, and the most efficient implementation might depend on vector sizes and element types. The proposed RISC-V vector extensions directly expose a \texttt{vfredsum.vs} that directly reduces a vector. If we looked at the Intel instruction set, we would probably not include this operation, since there is no simple efficient way to implement it. If we would focus on the proposed RISC-V vector extensions, we would add it without hesitation.
 
 Since we in this project only focus on MLKits 64-bit Intel backend, we restrict ourselves to vectors of 4 reals (64-bit floats). This is supported by AVX2 which is widely supported now. We will of course keep in mind to design our library such that it is not too tied to AVX2.
 
@@ -608,99 +610,117 @@ Which is as good as we can expect. There is no boxing. We load 4 elements from t
 
 \subsection{Benchmarks}
 
-In this section we will benchmark small example programs and try to explain why they are fast, or why in some cases they are slower than expected. All of the examples will use the modified version of the \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}} from the standard library.
+In this section we will benchmark small example programs and see how they compare to unoptimized versions. All of the examples will use the modified version of the \texttt{RealTable}\footnote{\url{https://github.com/melsman/mlkit/blob/master/basis/RealTable.sml}} from the standard library.
+ 
+We are benchmarking on two different computers. One is a older laptop with an Intel Core i5-6300U with 16GB of memory. The other is a newer desktop with an AMD Ryzen 5 3600 and 32GB of memory. This means that we are not only testing Intel's implementation of AVX2, but also AMD's.
 
-We are benchmarking on two different CPUs.
-
-Laptop with an Intel Core i5-6300U with 16GB of memory.
-
-Desktop with a AMD Ryzen 5 3600 and 32GB of memory.
+All measurements are in milliseconds.
 
 \subsubsection{Arithmetic}
 
 For the first case we will consider modifying an array $[x_1, \ldots, x_n]$ to $[x_1(x_1 + 2), \ldots, x_n(x_n + 2)]$. The code to beat is:
-\begin{lstlisting}
+\begin{minted}{sml}
 RealTable.modify (fun x => x * (x + 2.0)) t
-\end{lstlisting}
-
+\end{minted}
 We consider two versions. One that will make a scalar addition, which will do a broadcast with $2.0$ for each iteration:
-\begin{lstlisting}
+\begin{minted}{sml}
 RealTable.modify_simd (fun x => mul (x, adds (x, 2.0))) t
-\end{lstlisting}
-The second one will store a vector $\{ 2.0, 2.0, 2.0, 2.0 \}$, and do vector addition for each iteration. This will require a memory operation instead of a broadcast.
-\begin{lstlisting}
-let
-  val two = broadcast 2.0
-in
-  RealTable.modify_simd (fun x => mul (x, add (x, two))) t
-end
-\end{lstlisting}
-The result for various array sizes are for AMD Ryzen:
+\end{minted}
+The second one will store a vector $\{ 2.0, 2.0, 2.0, 2.0 \}$, and do vector addition for each iteration. This will require a memory operation instead of a broadcast for loading the right argument to \verb!add!
+\begin{minted}{sml}
+let val two = broadcast 2.0
+in RealTable.modify_simd (fun x => mul (x, add (x, two))) t end
+\end{minted}
 \begin{center}
-\begin{tabular}{ c c c c }
-    Elements & Scalar (ms) & Vector 1 & Vector 2 (ms) \\
-    $10^4$ & $0.015$ & $0.312$ & $0.006$ \\
-    $10^5$ & $0.182$ & $2.787$ & $0.042$ \\
-    $10^6$ & $1.013$ & $18.494$ & $0.489$ \\
-    $10^7$ & $17.518$ & $216.674$ & $7.184$ \\
-    $10^8$ & $182.967$ & $2175.133$ & $74.729$ \\
+\begin{tabular}{c c c c c c c}
+    \toprule
+    & \multicolumn{3}{c}{Intel} & \multicolumn{3}{c}{AMD} \\
+    Elements & Scalar & Vector 1 & Vector 2 & Scalar & Vector 1 & Vector 2 \\
+    \midrule
+    $10^4$ & $0.14$ & $0.04$ & $0.02$ & $0.02$ & $0.32$ & $0.1$ \\
+    $10^5$ & $0.70$ & $0.14$ & $0.07$ & $0.14$ & $1.71$ & $0.03$ \\
+    $10^6$ & $3.87$ & $1.25$ & $0.97$ & $1.00$ & $18.52$ & $0.47$ \\
+    $10^7$ & $38.19$ & $13.32$ & $10.91$ & $16.96$ & $213.69$ & $7.27$ \\
+    \bottomrule
 \end{tabular}
 \end{center}
-
-The result for various array sizes are for Intel i5:
-\begin{center}
-\begin{tabular}{ c c c c }
-    Elements & Scalar (ms) & Vector 1 & Vector 2 (ms) \\
-    $10^4$ & $0.121$ & $0.043$ & $0.028$ \\
-    $10^5$ & $1.262$ & $0.758$ & $0.290$ \\
-    $10^6$ & $6.000$ & $4.361$ & $1.027$ \\
-    $10^7$ & $33.639$ & $21.238$ & $12.373$ \\
-    $10^8$ & $354.351$ & $166.834$ & $119.857$ \\
-\end{tabular}
-\end{center}
-
-It turns out that 
+The version with the let-binding has a very significant speedup. The AMD version with the in-line \verb!broadcast! is very slow and we find that quite suprising.
 \subsubsection{Conditionals}
-
-\begin{lstlisting}
+Of of the features that we added is the possibility to do a conditional move instruction based on a mask value. This means that we can take the following code with an if-expression:
+\begin{minted}{sml}
 RealTable.modify (fun x => if x > 4096.0 then x else x * x) t
-\end{lstlisting}
-
-\begin{lstlisting}
+\end{minted}
+And rewrite it to the following vectorized code:
+\begin{minted}{sml}
 let val y = broadcast 4096.0
 in RealTable.modify_simd
     (fun x => Simd4.blend (Simd4.mul (x, x), x, Simd4.gt (x, y)))
     t
-\end{lstlisting}
+end
+\end{minted}
+Giving us the following results
 
 \begin{center}
-\begin{tabular}{ c c c }
-    Elements & Scalar (ms) & Vector (ms) \\
-    $10^4$ & $0.125$ & $0.005$ \\
-    $10^5$ & $1.332$ & $0.051$ \\
-    $10^6$ & $7.203$ & $0.453$ \\
-    $10^7$ & $70.075$ & $7.250$
+\begin{tabular}{c c c c c}
+    \toprule
+    & \multicolumn{2}{c}{Intel} & \multicolumn{2}{c}{AMD} \\
+    Elements & Scalar (ms) & Vector (ms) & Scalar (ms) & Vector (ms) \\
+    \midrule
+    $10^4$ & $0.16$ & $0.01$ & $0.22$ & $0.01$ \\
+    $10^5$ & $1.49$ & $0.12$ & $1.12$ & $0.03$ \\
+    $10^6$ & $13.78$ & $1.41$ & $10.90$ & $0.47$ \\
+    $10^7$ & $141.91$ & $12.45$ & $108.52$ & $7.35$ \\
+    \bottomrule
 \end{tabular}
 \end{center}
 
-But this bechmark is a little misleading, since it uses a conditional move instruction instead of jumps, and therefore is highly efficient on modern hardware. The speed is of the vectorized version is comparable to the aritmetic program from before.
+But this bechmark is a little misleading, since it uses a conditional move instruction instead of jumps, and therefore is highly efficient on modern hardware. The speed is of the vectorized version is comparable to the aritmetic program from before and about 10-20 times faster than the scalar code.
+
+\subsubsection{Reductions}
+
+We will benchmark a function that sums an array. We will have two approaches for optimizing this. One accumulates a \verb!real! and one accumulates a vector.
+
+\begin{minted}{sml}
+(* Scalar version *)
+RealTable.foldli (fn (_, x, y) => y + x) 0.0 t
+(* Vectorized with scalar accumulation *)
+RealTable.foldli_simd (fn (_, x, y) => (sum x) + y) 0.0 t
+(* Vectorized with vector accumulation *)
+RealTable.foldli_simd (fn (_, x, y) => add (x, y)) (broadcast 0.0) t
+\end{minted}
+\begin{center}
+\begin{tabular}{c c c c c c c}
+    \toprule
+    & \multicolumn{3}{c}{Intel} & \multicolumn{3}{c}{AMD} \\
+    Elements & Scalar & Vector 1 & Vector 2 & Scalar & Vector 1 & Vector 2 \\
+    \midrule
+    $10^4$ & $0.06$ & $0.01$ & $0.02$ & $0.05$ & $0.32$ & $0.02$ \\
+    $10^5$ & $0.67$ & $0.25$ & $0.48$ & $0.29$ & $1.96$ & $0.13$ \\
+    $10^6$ & $4.86$ & $1.73$ & $2.87$ & $4.65$ & $21.17$ & $1.55$ \\
+    $10^7$ & $51.67$ & $13.82$ & $26.41$ & $59.53$ & $235.07$ & $19.91$ \\
+    \bottomrule
+\end{tabular}
+\end{center}
+We get a nice speedup on Intel, but again we see that the some of the instructions are causing a significant slowdown on AMD which warrants further investation. Something in our reductions are the AMD code to run even slower than the scalar code on a significantly slower CPU.
 
 \subsubsection{Mandelbrot}
 
-Constants are boxed, because moving them out of the loop makes them cross a function call. That is kinda expensive. Multiple uses equals multiple unboxes.
-
+Finally we try to benchmark the vectorized implementation of the Mandelbrot image. We compare it directly to the simple tail-recursive version that works on a single pixel at a time.
 
 \begin{center}
-\begin{tabular}{ c c c }
-    Size & Scalar (ms) & Vector (ms) \\
-    $400*280$ & $513.48$ & $249.78$ \\
-    $800*600$ & $2089.30$ & $1099.94$ \\
-    $1200*800$ & $4214.69$ & $2140.42$
+\begin{tabular}{c c c c c}
+    \toprule
+    & \multicolumn{2}{c}{Intel} & \multicolumn{2}{c}{AMD} \\
+    Size & Scalar (ms) & Vector (ms) & Scalar (ms) & Vector (ms) \\
+    \midrule
+    $400 \times 280$ & $513.48$ & $249.78$ & $160.36$ & $151.65$ \\
+    $800 \times 600$ & $2089.30$ & $1099.94$ & $720.62$ & $626.34$ \\
+    $1200 \times 800$ & $4214.69$ & $2140.42$ & $1377.51$ & $1205.36$ \\
+    \bottomrule
 \end{tabular}
 \end{center}
 
-About a 2x speedup on i5.
-
+We achieve about a 2x speedup on i5, but we see roughly a 4x slowdown on AMD.
 
 \section{Future work}
 
@@ -813,6 +833,5 @@ Libraries
 Benchmarks
 
 Mandelbrot example program
-
 
 \end{document}

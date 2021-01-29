@@ -21,6 +21,7 @@ fun mandelbrot_simd (re: simd, im: real): simd =
     val one = broadcast 1.0
     val four = broadcast 4.0
     val two = broadcast 2.0
+    val vim = broadcast im
     fun go (iter, iters, re', im') =
       let
         val re2 = square re'
@@ -31,7 +32,7 @@ fun mandelbrot_simd (re: simd, im: real): simd =
         then
           let 
             val re'' = add ((sub (re2, im2)), re)
-            val im'' = adds (mul (mul (re', im'), two), im)
+            val im'' = add (mul (mul (re', im'), two), vim)
           in
             go ( iter + 1
                , blend (iters, add (iters, one), mask)
