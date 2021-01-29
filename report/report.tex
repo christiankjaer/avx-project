@@ -344,14 +344,12 @@ To implement the primops in table~\ref{tbl:primops} we take a pretty simple appr
 \[
     f_{\mathrm{boxed}} \equiv \mathtt{box}\ (f_{\mathrm{unboxed}} (\mathtt{unbox}\ x)).
 \]
-
 Then we only have to implement support for unboxed operations, and the complexity of dealing with memory allocation, loading and storing vector values to memory will be handled in the implementation of the the primops \verb!__f256_box! and \verb!__f256_unbox!. There are already primops for boxing and unboxing reals that we can reuse.
 
 For instance we will implement \verb!__m256d_broadcast x! by rewriting it to
 \begin{verbatim}
 __f256_box (__f256_broadcast (__f64_unbox x))
 \end{verbatim}
-
 Also we will not generate code for the boxing operation for vectors. What we will do instead is to rewrite the boxing operation to the following code in the last step of the optimizer:
 \begin{minted}{sml}
 let
@@ -394,13 +392,14 @@ vaddsd %xmm1, %xmm0, %xmm1     # (4)
 \end{minted}
 We have tried to visualize the shuffling around of elements on figure~\ref{fig:hadd}. The first instruction will extract the top two elements. The second instruction will add the bottom and the top together. The third instruction will extract the top element and the last instruction will do the sum in the bottom element. Here we also see an advantage of the overlapping vectors. We can use the same registers for scalars, two element vectors and four element vectors.
 \begin{figure}
+    \centering
     \caption{Implementation of sum}
     \label{fig:hadd}
-    \includegraphics[width=\textwidth]{sum.png}
+    \includegraphics[width=0.7\textwidth]{sum.png}
 \end{figure}
 
 \paragraph{Comparisons and conditionals}
-The usual comparison operations on x86 will set flags, and will not place a result in a register. For AVX, a comparison of two vectors will place a result in a vector register. This means that in order to implement the comparison primops, we only have to return the mask register, which makes them very simple to implement. They are all just a single instruction. We when have to use boolean reductions in order to put them inside an if-expression in SML.
+The usual comparison operations on x86 will set flags, and will not place a result in a register. For AVX, a comparison of two vectors will place the resulting mask in a vector register. This means that in order to implement the comparison primops, we only have to return the mask register, which makes them very simple to implement. They are all just a single instruction. We then have to use boolean reductions in order to put them inside an if-expression in SML.
 
 Implementing \verb!__f256_blend! is just a single instruction. It takes to vectors and a mask, and writes to a result using the mask.
 
@@ -408,14 +407,13 @@ Implementing \verb!__f256_blend! is just a single instruction. It takes to vecto
 
 Implementing \verb!__f256_broadcast! is also only a single instruction. We can use the unboxing of reals already present in the MLKit for the argument.
 
-We generate \verb!true! and \verb!false! constants use \verb!xor! or \verb!vpcmpeqd! with the same register to generate masks of 0s and 1s.
+We generate \verb!true! and \verb!false! constants using \verb!xor! or \verb!vpcmpeqd! with the same register to generate masks of 0s and 1s.
 
 All memory accesses are just using a single \verb!vmovupd! instruction.
 
 Since we did not want to modify the memory allocation in MLKit too much, we have made the decision to rely on the unaligned memory operations that are possible in AVX2. They might be a little slower than making sure that all accesses are properly aligned though.
 
 Now we are actually able to generate functioning code, but the generated code will contain a very large number of boxing operations. We will try to optimize for those now.
-
 
 \subsection{Unboxing}
 
@@ -453,7 +451,7 @@ let
 in box (sub (unbox a, div (unbox b, unbox a)))
 end
 \end{minted}
-This has a lot of unnecessary boxing operations that the previous optimization did not get rid of. If we know that a boxed let-binding is always used in a unbox operation it its scope, then we can safely eliminate those operations. Then we can rewrite the previous program to
+This has a lot of unnecessary boxing operations that the previous optimization did not get rid of. If we know that a boxed let-binding is always used in an unbox operation in its scope, then we can safely eliminate those operations. We can rewrite the previous program to
 \begin{minted}{sml}
 let
   val a = add (unbox x, unbox y)
@@ -489,6 +487,7 @@ structure M256d :> REAL4 = struct
   (* And so on *)
  end
 \end{minted}
+Which should all that is needed to do some hardware accelerated SIMD-programming in Standard ML.
 
 \section{Data-parallel programming}
 
@@ -547,7 +546,7 @@ giving is the nice picture on figure~\ref{fig:mandel}.
 \end{figure}
 
 \section{Evaluation}
-In this section we will evaluate our changes to the MLKit compiler. First we will inspect the output of the compiler to see if we generate assembly code that are adequately unboxed. Finally we will benchmark some simple programs that we have optimized using our vector library.
+In this section we will evaluate our changes to the MLKit compiler. First we will inspect the output of the compiler to see if we generate assembly code that is adequately unboxed. Finally we will benchmark some simple programs that we have optimized using our vector library.
 
 \subsection{Inspecting assembly code from example programs}
 
@@ -732,7 +731,7 @@ We achieve about a 2x speedup on i5, but we see no improvements on AMD.
 
 In this project we achieved what we set out to do. We added vector support for MLKit and we actually achieved performance improvements for all the programs that we optimized. This was done with about 800 lines of additional code to the compiler. Much of the time was spent getting to know the architecture of the compiler and figuring out where to make the changes. Actually adding the new instruction sequences was fairly straight forward and did not cause many difficulties.
 
-We find the vector library that we designed fairly easy to program with, but there are still some problems with performance where scalars are broadcast to vector registers, especially on AMD. We think that instructions on AMD that operate across lanes are particularly slow, because we also see poor performance with reduction operations.
+We find the vector library that we designed fairly easy to program with, but there are still some problems with performance where scalars are broadcast to vector registers, especially on AMD. We suspect that instructions on AMD that operate across lanes are particularly slow, because we also see poor performance with reduction operations.
 
 The vector signature is fairly small, and we think that implementing support for it with a different instruction set will be fairly easy since many of the vector extensions keep the concepts of mask registers, conditional moves and broadcasts.
 
