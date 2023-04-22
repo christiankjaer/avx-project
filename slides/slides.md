@@ -29,6 +29,19 @@ A register contains multiple values
 
 ---
 
+## Intel AVX2
+
+- 16 256 bit registers
+
+- 8 single precision or 4 double precision floating point numbers
+
+- For most cases you can do the same to them as you do to regular doubles
+    * Store/load
+    * Arithmetic
+    * Comparisons
+
+---
+
 ## Low level
 
 HARDCORE
